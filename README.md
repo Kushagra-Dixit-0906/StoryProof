@@ -109,7 +109,13 @@ StoryProof makes a strict distinction between quantitative correlations and caus
   - Implement robust path resolution checking relative to workspace and data directories.
   - Parse metadata (dates, segments, products, ratings, support IDs, agents) safely without inventing missing fields.
   - Preserves exact raw text and associates reproducible deterministic IDs (`source_key_index`) and provenance records.
-- [ ] **Milestone 3C.2: Qualitative Evidence Verification & Alignment**
+- [x] **Milestone 3C.2: Qualitative Evidence Verification & Alignment (v0.3.4)**
+  - Implement a deterministic qualitative evidence retrieval and linking layer in `src/engine/retrieval.py` supporting exact product, segment, and date-window matches.
+  - Implement regex-based safe keyword matching (`\b` boundaries) and capped scoring (+3.0 max) to ensure auditable relevance calculation.
+- [x] **Milestone 3C.3: Qualitative & Quantitative Narrative Synthesis (v0.3.5)**
+  - Implement a deterministic, template-based narrative synthesis layer in `src/engine/synthesis.py` combining materiality (3A), drivers (3B.1), hypotheses (3B.2), and retrieved qualitative evidence (3C.2).
+  - Enforce conservative evidence classification (FACT, ASSOCIATION, HYPOTHESIS, CONTEXT, LIMITATION) and strict causality safeguards (neutral verbs only, mandatory causality disclaimer).
+  - Implement multi-KPI tension/contradiction detection and reporting to capture divergence between structured speedups and qualitative complaints.
 - [ ] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
   - Add narrative generation engine matching CX Manager (customer health focus) and Operations Manager (cost/efficiency focus).
   - Implement the three-tier decision readiness flag: `GREEN` (Decision-Ready), `YELLOW` (Investigation Required), `RED` (Not Justified).
@@ -190,3 +196,35 @@ Milestone 3C.1 introduces a deterministic evidence-ingestion layer in `src/engin
 3. **Deterministic ID Generation**: Reproducible IDs are generated using the `source_key_index` format, ensuring the same text files always yield the exact same evidence IDs.
 4. **Safety & Abstention**: Missing optional metadata fields (e.g., segment or product) default to `None` rather than fabricated values. File absence and empty files are handled safely by returning `NOT_AVAILABLE` status results.
 5. **No Causal Inference/LLMs**: Ingestion is strictly deterministic and read-only, laying the data provenance foundation for later qualitative verification. No sentiment analysis, semantic theme extraction, RAG, or causal assumptions are performed.
+
+---
+
+## 📂 Milestone 3C.2 — Qualitative Evidence Retrieval & Linking Layer
+
+Milestone 3C.2 introduces a deterministic retrieval and linking layer in `src/engine/retrieval.py` to link qualitative evidence records to investigation findings.
+
+### Core Concepts
+
+1. **Deterministic Matching**: Filters and scores evidence records based on exact product and segment metadata alignment, target date windows, and complete word-boundary keyword checks.
+2. **Deterministic Relevance Scoring**: Computes a transparent, auditable score where:
+   - Exact Product Match = `+2.0`
+   - Exact Segment Match = `+2.0`
+   - Date Window Match = `+1.0`
+   - Distinct Keyword Match = `+1.0` per matched term (capped at `+3.0` maximum)
+   - Minimum Score Threshold = `1.0` (scores $< 1.0$ are excluded)
+3. **Abstention & Ordering**: Excludes mismatching metadata and out-of-range dates, returning `NO_MATCH` if no record meets the minimum score threshold. Results are deterministically sorted by relevance score descending, then evidence ID ascending.
+4. **Causality Safety**: Matches and reasons are generated using strictly observational, non-causal verbs, keeping provenance references preserved exactly.
+
+---
+
+## 📂 Milestone 3C.3 — Qualitative & Quantitative Narrative Synthesis
+
+Milestone 3C.3 introduces a deterministic synthesis layer in `src/engine/synthesis.py` that formats materiality, driver, hypothesis, and qualitative findings into a fully traceable investigation report.
+
+### Core Concepts
+
+1. **Structured Narrative Schema**: Statements are formatted as structured dicts containing the narrative text, exactly one classification (`FACT`, `ASSOCIATION`, `HYPOTHESIS`, `CONTEXT`, `LIMITATION`), and references to structured findings (`structured_refs`) and qualitative evidence (`evidence_refs`).
+2. **Conflict & Tension Detection**: When structured metrics show efficiency gains but qualitative feedback reports unresolved issues, the layer detects and explicitly details the tension (e.g., AHT operational speedup vs. premature ticket closure complaints) rather than suppressing either finding.
+3. **Multi-KPI Synthesis**: Synthesizes findings across AHT, FCR, CSAT, Repeat Contact Rate, Retention Rate, and AI Resolution Rate while respecting their individual units, grains, thresholds, and insufficient history limitations.
+4. **Causality Safeguards & Disclaimer**: Implements a strict causality-language guard (verifying no causal verbs like "caused", "resulted in", or "driven by" are present in generated statements) and appends a mandatory **Causality Disclaimer**: `"The available evidence does not establish causality; observed changes represent associations and candidate explanations only."`
+5. **No Recalculation**: Preserves the exact values, statuses, and boundaries computed upstream in previous milestones (such as AI Resolution Rate's insufficient-history flag from 3A).
