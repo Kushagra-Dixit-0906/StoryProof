@@ -1,0 +1,60 @@
+# StoryProof Simulation Parameters and Business Events
+# Accenture Innovation Challenge 2026
+
+simulation_metadata:
+  scenario_name: "Customer Support AI Rollout and Operations Trap"
+  description: "Deterministic simulation of a multi-product support organization rolling out an AI chat assistant. Demonstrates the AHT efficiency trap where handling times drop but customer outcomes decline due to unresolved repeat contact loops and overlapping product issues."
+  random_seed: 42
+  start_date: "2026-01-01"
+  end_date: "2026-06-30"
+
+scope:
+  regions:
+    - "North"
+    - "South"
+    - "East"
+    - "West"
+  products:
+    - "Core ERP"
+    - "CRM Cloud"
+    - "Analytics Suite"
+  customer_segments:
+    - "Enterprise"
+    - "Mid-Market"
+    - "SMB"
+  agent_teams:
+    - "Alpha"
+    - "Beta"
+    - "Gamma"
+
+timeline_and_events:
+  pre_rollout_period:
+    start_date: "2026-01-01"
+    end_date: "2026-03-31"
+    description: "Support operations are purely manual; metrics represent historical baseline."
+  
+  automation_rollout:
+    description: "Gradual roll-out of Auto-Assistant-v1.2 (AI)."
+    phases:
+      - phase: "Pilot"
+        start_date: "2026-03-01"
+        end_date: "2026-03-31"
+        target_adoption_pct: 1.0 # 1% trial
+      - phase: "Phase 1"
+        start_date: "2026-04-01"
+        end_date: "2026-04-30"
+        target_adoption_pct: 30.0
+      - phase: "Phase 2"
+        start_date: "2026-05-01"
+        end_date: "2026-05-31"
+        target_adoption_pct: 60.0
+      - phase: "Phase 3 (Peak Adoption)"
+        start_date: "2026-06-01"
+        end_date: "2026-06-30"
+        target_adoption_pct: 85.0
+        
+  confounding_events:
+    - name: "CRM Cloud May Patch Release"
+      date: "2026-05-04"
+      affected_product: "CRM Cloud"
+      description: "A core system software update introduced a sync bug for CRM Cloud contacts, driving higher support ticket volumes and drop-offs in customer experience (CSAT)."

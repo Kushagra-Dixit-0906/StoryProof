@@ -1,0 +1,207 @@
+# StoryProof KPI Semantic Definitions
+# Accenture Innovation Challenge 2026
+
+AHT:
+  name: "Average Handling Time"
+  description: "The average duration spent handling a support contact, calculated from initiation to closure. Raw handling time is logged in seconds and expressed in minutes."
+  formula: "total_handling_seconds / resolved_contacts"
+  unit: "minutes"
+  owner: "Support Operations Manager"
+  business_purpose: "Measure operational efficiency and resource utilization in customer support channels."
+  expected_drivers:
+    - "issue_complexity"
+    - "agent_workload"
+    - "automation_adoption"
+    - "customer_segment_mix"
+    - "product_type"
+  source: "support_daily.csv"
+  source_grain: "daily"
+  refresh_cadence: "daily"
+  materiality_threshold: 0.10 # 10% change is material
+  threshold_type: "relative"
+  allowed_roles_personas:
+    - "Operations Manager"
+    - "CX Manager"
+  lineage_description: "Calculated daily by dividing total_handling_seconds by resolved_contacts from the Support Operations database, then dividing by 60 to convert raw seconds to minutes."
+  directionality: "lower_is_better_for_efficiency"
+  aggregation_method: "weighted_average"
+  numerator_field: "total_handling_seconds"
+  denominator_field: "resolved_contacts"
+  raw_unit: "seconds"
+  display_unit: "minutes"
+  evidence_sources:
+    - "support_daily.csv (structured)"
+    - "rollout_report.txt (contextual)"
+  minimum_history_days: 30
+  baseline_method: "historical_average_excluding_pilot"
+  confidence_notes: "High confidence under normal operations; check resolved_contacts volume to avoid low-denominator bias."
+  causal_interpretation_policy: "A drop in AHT indicates operational speedup but should not be interpreted as improved customer outcomes unless FCR and CSAT remain stable or improve."
+
+FCR:
+  name: "First Contact Resolution"
+  description: "The percentage of incoming support contacts that are resolved during the first interaction without requiring follow-up."
+  formula: "first_contact_resolutions / contacts"
+  unit: "percentage"
+  owner: "Support Operations Manager"
+  business_purpose: "Evaluate support resolution quality, agent effectiveness, and process friction."
+  expected_drivers:
+    - "issue_complexity"
+    - "agent_capability"
+    - "knowledge_availability"
+    - "automation_effectiveness"
+  source: "support_daily.csv"
+  source_grain: "daily"
+  refresh_cadence: "daily"
+  materiality_threshold: 0.02 # 2 percentage points shift is material
+  threshold_type: "absolute_percentage_points"
+  allowed_roles_personas:
+    - "Operations Manager"
+    - "CX Manager"
+  lineage_description: "Calculated daily by dividing first_contact_resolutions by contacts logged in Support Operations."
+  directionality: "higher_is_better"
+  aggregation_method: "weighted_average"
+  numerator_field: "first_contact_resolutions"
+  denominator_field: "contacts"
+  raw_unit: "contacts"
+  display_unit: "percentage"
+  evidence_sources:
+    - "support_daily.csv (structured)"
+  minimum_history_days: 30
+  baseline_method: "historical_average"
+  confidence_notes: "High confidence; FCR is contact-based and calculated directly from structured support tickets."
+  causal_interpretation_policy: "FCR is a proxy for initial resolution quality. If FCR remains flat while Repeat Contacts rise, it suggests the definition of 'resolved' in support logs may be artificially inflated or too lax."
+
+CSAT:
+  name: "Customer Satisfaction"
+  description: "The average customer satisfaction rating calculated from post-interaction survey responses on a 0-100 scale."
+  formula: "Average customer CSAT score (0-100 scale)"
+  unit: "percentage"
+  owner: "CX Manager"
+  business_purpose: "Assess customer satisfaction and experience quality with the support interaction."
+  expected_drivers:
+    - "resolution_quality"
+    - "wait_time"
+    - "agent_empathy"
+    - "support_workflow_friction"
+    - "product_reliability"
+  source: "cx_weekly.csv"
+  source_grain: "weekly"
+  refresh_cadence: "weekly"
+  materiality_threshold: 3.0 # 3 percentage points change is material
+  threshold_type: "absolute_percentage_points"
+  allowed_roles_personas:
+    - "CX Manager"
+    - "Operations Manager"
+  lineage_description: "Aggregated weekly from post-interaction CSAT survey forms submitted by customers. Note: This structured metric is distinct from the unstructured qualitative commentary in customer_feedback.txt, which is used as contextual evidence."
+  directionality: "higher_is_better"
+  aggregation_method: "weighted_average"
+  numerator_field: "sum of (csat_score * survey_responses)"
+  denominator_field: "survey_responses"
+  raw_unit: "survey_responses"
+  display_unit: "percentage"
+  evidence_sources:
+    - "cx_weekly.csv (structured)"
+    - "customer_feedback.txt (qualitative evidence, distinct from this structured metric)"
+  minimum_history_days: 90
+  baseline_method: "historical_average"
+  confidence_notes: "Medium confidence; dependent on survey response rates and selection bias. Unstructured customer feedback should be used to contextualize changes but does not modify the quantitative metric value."
+  causal_interpretation_policy: "A drop in CSAT reflects customer experience degradation. Check for correlation with Repeat Contact Rate and investigate transcripts to differentiate process-driven friction from software-driven errors."
+
+Repeat_Contact_Rate:
+  name: "Repeat Contact Rate"
+  description: "The percentage of support contacts associated with a repeat contact within the defined repeat window (e.g. 48 hours)."
+  formula: "repeat_contacts / contacts"
+  unit: "percentage"
+  owner: "Support Operations Manager"
+  business_purpose: "Monitor unresolved support demand and identify failure points in the initial resolution process."
+  expected_drivers:
+    - "resolution_quality"
+    - "issue_complexity"
+    - "support_workflow_design"
+    - "agent_training"
+  source: "support_daily.csv"
+  source_grain: "daily"
+  refresh_cadence: "daily"
+  materiality_threshold: 0.03 # 3 percentage points shift is material
+  threshold_type: "absolute_percentage_points"
+  allowed_roles_personas:
+    - "Operations Manager"
+    - "CX Manager"
+  lineage_description: "Calculated daily by dividing repeat_contacts by contacts logged in Support Operations."
+  directionality: "lower_is_better"
+  aggregation_method: "weighted_average"
+  numerator_field: "repeat_contacts"
+  denominator_field: "contacts"
+  raw_unit: "contacts"
+  display_unit: "percentage"
+  evidence_sources:
+    - "support_daily.csv (structured)"
+  minimum_history_days: 30
+  baseline_method: "historical_average"
+  confidence_notes: "High confidence; direct operational metric reflecting unresolved issues."
+  causal_interpretation_policy: "An increase in Repeat Contact Rate indicates unresolved support demand, suggesting the initial contact was not fully resolved. It is highly correlated with CSAT decline and indicates FCR metrics might be misleading."
+
+Retention_Rate:
+  name: "Retention Rate"
+  description: "The percentage of active customers who remain active at the end of the monthly billing period."
+  formula: "retained_customers / active_customers"
+  unit: "percentage"
+  owner: "CX Manager"
+  business_purpose: "Measure customer loyalty, long-term business health, and financial stability."
+  expected_drivers:
+    - "customer_experience_trends"
+    - "product_stability"
+    - "competitor_actions"
+    - "support_quality_lagged"
+  source: "crm_monthly.csv"
+  source_grain: "monthly"
+  refresh_cadence: "monthly"
+  materiality_threshold: 0.005 # 0.5% change is material (highly sensitive)
+  threshold_type: "absolute_percentage_points"
+  allowed_roles_personas:
+    - "CX Manager"
+  lineage_description: "Calculated monthly as retained_customers divided by active_customers for the corresponding billing period in CRM."
+  directionality: "higher_is_better"
+  aggregation_method: "weighted_average"
+  numerator_field: "retained_customers"
+  denominator_field: "active_customers"
+  raw_unit: "customers"
+  display_unit: "percentage"
+  evidence_sources:
+    - "crm_monthly.csv (structured)"
+  minimum_history_days: 180
+  baseline_method: "trailing_three_month_average"
+  confidence_notes: "High confidence on actual churn counts; lags behind weekly operational and CSAT shifts by 30-60 days."
+  causal_interpretation_policy: "Deteriorating retention indicates business outcome degradation. Retention is customer-centric and acts as the ultimate validation point for support quality hypotheses."
+
+AI_Resolution_Rate:
+  name: "AI Resolution Rate"
+  description: "The percentage of support contacts successfully closed by the automated AI agent without human routing."
+  formula: "ai_resolved_contacts / total_ai_contacts"
+  unit: "percentage"
+  owner: "Support Operations Manager"
+  business_purpose: "Track automation containment performance and AI effectiveness."
+  expected_drivers:
+    - "ai_intent_matching"
+    - "knowledge_base_coverage"
+    - "customer_willingness_to_engage"
+  source: "ai_resolution_rate.csv"
+  source_grain: "daily"
+  refresh_cadence: "daily"
+  materiality_threshold: 0.05 # 5% change is material
+  threshold_type: "relative"
+  allowed_roles_personas:
+    - "Operations Manager"
+  lineage_description: "Calculated daily from the AI chat agent logs platform. EXPLICIT SPARSE HISTORY ALERT: This is a newly introduced KPI and currently has only 21 days of history. It does not meet the minimum_history_days requirement (60 days) and should trigger engine abstention/low-confidence flags."
+  directionality: "higher_is_better"
+  aggregation_method: "weighted_average"
+  numerator_field: "ai_resolved_contacts"
+  denominator_field: "total_ai_contacts"
+  raw_unit: "contacts"
+  display_unit: "percentage"
+  evidence_sources:
+    - "ai_resolution_rate.csv (structured)"
+  minimum_history_days: 60
+  baseline_method: "none_sparse_history"
+  confidence_notes: "This KPI is NOT one of the five primary connected KPIs and is excluded from the core support baseline checks due to insufficient history."
+  causal_interpretation_policy: "This KPI should trigger low-confidence/abstention flags when evaluated by the intelligence engine due to sparse historical baseline."

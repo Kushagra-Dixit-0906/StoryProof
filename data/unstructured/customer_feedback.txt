@@ -1,0 +1,17 @@
+CSAT Survey Comment - Date: 2026-01-15 - Segment: SMB - Rating: 5/5
+"Support was quick and solved my ERP issue immediately. Great job."
+
+CSAT Survey Comment - Date: 2026-04-18 - Segment: Mid-Market - Rating: 2/5
+"The new instant chat tool responds in seconds, but it just closes the chat without actually fixing the problem. I had to open three separate tickets for the same issue."
+
+CSAT Survey Comment - Date: 2026-05-09 - Segment: Enterprise - Rating: 1/5
+"Extremely disappointed. Our ERP connection went down. We got instant bot replies that didn't understand the database locking mechanism. We need manual engineering support for Enterprise accounts, not AI wrappers."
+
+CSAT Survey Comment - Date: 2026-05-28 - Segment: Mid-Market - Rating: 2/5
+"CRM Cloud has been buggy since the May release. The support bot tried to close the ticket instantly by telling us to clear our cache. Wasted a lot of time."
+
+CSAT Survey Comment - Date: 2026-06-12 - Segment: SMB - Rating: 3/5
+"Chat response is very fast now. But the answers are too generic. Often have to contact support multiple times to get a working solution."
+
+CSAT Survey Comment - Date: 2026-06-25 - Segment: Enterprise - Rating: 2/5
+"Why can't we bypass the automated chat assistant? For complex analytical issues, it has a 0% success rate. FCR is flat because it claims it resolved it, but we have to call back."

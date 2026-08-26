@@ -1,0 +1,73 @@
+# StoryProof Evidence Sources & Provenance Metadata
+# Accenture Innovation Challenge 2026
+
+sources:
+  support_daily:
+    name: "Support Operations Daily Log"
+    path: "data/support_daily.csv"
+    source_type: "CALCULATED"
+    is_structured: true
+    grain: "daily, region, product, customer_segment, agent_team, ai_assisted"
+    authority_level: "PRIMARY_OPERATIONAL"
+    allowed_use: "Quantitative KPI metrics, baselines, driver/contribution analysis"
+    provenance_requirements: "Deterministic aggregation from structured relational database logs"
+
+  cx_weekly:
+    name: "Customer Experience Weekly Feedback Surveys"
+    path: "data/cx_weekly.csv"
+    source_type: "CALCULATED"
+    is_structured: true
+    grain: "weekly, region, product, customer_segment"
+    authority_level: "PRIMARY_CX"
+    allowed_use: "CSAT score monitoring and trend analysis"
+    provenance_requirements: "Aggregated results of weekly post-contact customer email surveys"
+
+  crm_monthly:
+    name: "CRM Billing and Account Registry"
+    path: "data/crm_monthly.csv"
+    source_type: "CALCULATED"
+    is_structured: true
+    grain: "monthly, region, customer_segment"
+    authority_level: "PRIMARY_BUSINESS"
+    allowed_use: "Customer count monitoring and monthly churn/retention rate calculations"
+    provenance_requirements: "Exported from CRM billing ledgers at monthly close"
+
+  ai_resolution_rate:
+    name: "AI Containment Logs"
+    path: "data/ai_resolution_rate.csv"
+    source_type: "CALCULATED"
+    is_structured: true
+    grain: "daily, region, product"
+    authority_level: "SECONDARY_AUTOMATION"
+    allowed_use: "Automation containment assessment (sparse-history scenario only)"
+    provenance_requirements: "System logs from Auto-Assistant interaction backend. Note: flagged for low history volume."
+
+  support_transcripts:
+    name: "Customer Support Chat Transcripts"
+    path: "data/unstructured/support_transcripts.txt"
+    source_type: "QUALITATIVE"
+    is_structured: false
+    grain: "individual conversation ticket transcript"
+    authority_level: "CONTEXTUAL_SUPPORT"
+    allowed_use: "Extract customer issues, bot interaction behaviors, and software defect complaints"
+    provenance_requirements: "Raw chat transcription logs from support agent portal"
+
+  customer_feedback:
+    name: "Customer Survey Comments"
+    path: "data/unstructured/customer_feedback.txt"
+    source_type: "QUALITATIVE"
+    is_structured: false
+    grain: "individual customer review text"
+    authority_level: "CONTEXTUAL_CX"
+    allowed_use: "Sentiment corroboration, user quotes, process-friction stories"
+    provenance_requirements: "Unedited text input from CSAT rating forms"
+
+  rollout_report:
+    name: "Project QuickResolve Rollout Status Report"
+    path: "data/unstructured/rollout_report.txt"
+    source_type: "CONTEXTUAL"
+    is_structured: false
+    grain: "business status document"
+    authority_level: "OFFICIAL_CONTEXT"
+    allowed_use: "Identify rollout timeline, project objectives, target adoption, and software release timelines"
+    provenance_requirements: "Operational memo authored by Support Operations leadership"
