@@ -98,7 +98,12 @@ StoryProof makes a strict distinction between quantitative correlations and caus
   - Calculate exposure/denominator share and midpoint/Shapley-style decomposition (reconciling exactly to overall change within $10^{-9}$).
   - Implement driver signal ranking (`contribution_magnitude`) and separate AI-assisted operational comparison across rollout phases.
   - Enforce strict causality policy (avoiding causal verbs; separating Fact, Association, and Hypothesis) and data limitation guards/abstentions.
-- [ ] **Milestone 3B.2: Confounder & Hypotheses Analysis**
+- [x] **Milestone 3B.2: Confounder & Hypotheses Analysis (v0.3.2)**
+  - Implement a deterministic, evidence-synthesis engine in `src/engine/hypotheses.py` evaluating competing hypotheses (AI Rollout, CRM Cloud Patch, and Mix Shift).
+  - Define concentration metrics for pre/post patch differential signal using a volume-weighted control group.
+  - Implement mix share classification (LOW, MODERATE, HIGH) to isolate structural volume shifts.
+  - Formulate a deterministic synthesis module mapping hypothesis strength and data limitations to overall evidence state.
+  - Enforce strict Causality Policy, safety guards, and abstentions (CSAT/Retention by AI rollout -> `NOT_AVAILABLE`).
 - [ ] **Milestone 3C: Evidence Verification**
 - [ ] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
   - Add narrative generation engine matching CX Manager (customer health focus) and Operations Manager (cost/efficiency focus).
@@ -147,3 +152,19 @@ pip install -r requirements.txt
 ```bash
 streamlit run app.py
 ```
+
+---
+
+## 🔬 Milestone 3B.2 — Competing Hypothesis Analysis
+
+Milestone 3B.2 introduces a deterministic evidence-synthesis engine in `src/engine/hypotheses.py` to evaluate competing explanations for KPI shifts.
+
+### Core Concepts
+
+1. **Three Competing Hypotheses**:
+   - **Hypothesis 1 — AI Rollout Association**: Analyzes whether the AI rollout is consistently associated with operational changes across phases (Q1, April, May, June). Checks for direction consistency and evaluates relative differences. Bounded by Q1 zero-AI baseline safety checks.
+   - **Hypothesis 2 — CRM Cloud May-4 Patch**: Determines whether observed KPI movement was concentrated in CRM Cloud post-patch (`2026-05-04` through `2026-06-30`) compared with a control group of unaffected products. Computes a deterministic pre/post differential signal.
+   - **Hypothesis 3 — Mix Shift**: Measures the proportion of the KPI shift mathematically attributable to volume/exposure changes across segments using Shapley-style decomposition. Classifies mix share as `LOW` (< 20%), `MODERATE` (20-50%), or `HIGH` (>= 50%).
+2. **Ambiguity Handling**: Rather than choosing a single causal "winner" on observational data, StoryProof explicitly detects confounding. When multiple explanations (e.g. AI rollout and CRM patch) show moderate-to-strong associations or when CSAT cannot be split due to data limitations, the synthesis logic resolves to `INVESTIGATION_REQUIRED`.
+3. **Abstention & Safety Guards**: The engine abstains (returning `NOT_AVAILABLE`) if required columns/dimensions are missing, baseline periods have zero observations, control groups are absent, or CSAT/Retention are queried by `ai_assisted` (which they do not support).
+4. **Causality Policy**: Enforces non-causal verbs (`"associated with"`, `"consistent with"`, etc.) in all narrative signals and logs.
