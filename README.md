@@ -93,7 +93,12 @@ StoryProof makes a strict distinction between quantitative correlations and caus
   - Model historical variation at the natural grain (daily/weekly/monthly) and standard deviation/z-scores.
   - Separate business materiality from statistical volatility.
   - Enforce minimum history requirements (abstaining on sparse data like AI Resolution Rate).
-- [ ] **Milestone 3B: Driver Analysis**
+- [x] **Milestone 3B.1: Deterministic Driver & Contribution Analysis Core (v0.3b)**
+  - Implement a deterministic, math-only driver profiler and mix-rate decomposition in `src/engine/drivers.py`.
+  - Calculate exposure/denominator share and midpoint/Shapley-style decomposition (reconciling exactly to overall change within $10^{-9}$).
+  - Implement driver signal ranking (`contribution_magnitude`) and separate AI-assisted operational comparison across rollout phases.
+  - Enforce strict causality policy (avoiding causal verbs; separating Fact, Association, and Hypothesis) and data limitation guards/abstentions.
+- [ ] **Milestone 3B.2: Confounder & Hypotheses Analysis**
 - [ ] **Milestone 3C: Evidence Verification**
 - [ ] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
   - Add narrative generation engine matching CX Manager (customer health focus) and Operations Manager (cost/efficiency focus).
