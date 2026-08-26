@@ -104,7 +104,12 @@ StoryProof makes a strict distinction between quantitative correlations and caus
   - Implement mix share classification (LOW, MODERATE, HIGH) to isolate structural volume shifts.
   - Formulate a deterministic synthesis module mapping hypothesis strength and data limitations to overall evidence state.
   - Enforce strict Causality Policy, safety guards, and abstentions (CSAT/Retention by AI rollout -> `NOT_AVAILABLE`).
-- [ ] **Milestone 3C: Evidence Verification**
+- [x] **Milestone 3C.1: Unstructured Evidence Ingestion & Provenance Layer (v0.3.3)**
+  - Implement a deterministic evidence-ingestion layer in `src/engine/evidence.py` to parse qualitative support chat transcripts, survey reviews, and contextual rollout reports.
+  - Implement robust path resolution checking relative to workspace and data directories.
+  - Parse metadata (dates, segments, products, ratings, support IDs, agents) safely without inventing missing fields.
+  - Preserves exact raw text and associates reproducible deterministic IDs (`source_key_index`) and provenance records.
+- [ ] **Milestone 3C.2: Qualitative Evidence Verification & Alignment**
 - [ ] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
   - Add narrative generation engine matching CX Manager (customer health focus) and Operations Manager (cost/efficiency focus).
   - Implement the three-tier decision readiness flag: `GREEN` (Decision-Ready), `YELLOW` (Investigation Required), `RED` (Not Justified).
@@ -168,3 +173,20 @@ Milestone 3B.2 introduces a deterministic evidence-synthesis engine in `src/engi
 2. **Ambiguity Handling**: Rather than choosing a single causal "winner" on observational data, StoryProof explicitly detects confounding. When multiple explanations (e.g. AI rollout and CRM patch) show moderate-to-strong associations or when CSAT cannot be split due to data limitations, the synthesis logic resolves to `INVESTIGATION_REQUIRED`.
 3. **Abstention & Safety Guards**: The engine abstains (returning `NOT_AVAILABLE`) if required columns/dimensions are missing, baseline periods have zero observations, control groups are absent, or CSAT/Retention are queried by `ai_assisted` (which they do not support).
 4. **Causality Policy**: Enforces non-causal verbs (`"associated with"`, `"consistent with"`, etc.) in all narrative signals and logs.
+
+---
+
+## 📂 Milestone 3C.1 — Unstructured Evidence Ingestion & Provenance Layer
+
+Milestone 3C.1 introduces a deterministic evidence-ingestion layer in `src/engine/evidence.py` to convert qualitative support chat transcripts, survey reviews, and contextual rollout reports into structured evidence records.
+
+### Core Concepts
+
+1. **Deterministic Parsing**:
+   - **Support Transcripts**: Splitted by block headers `[TRANSCRIPT - YYYY-MM-DD]`, extracting Date, Support ID, Agent, Customer Segment, and Product.
+   - **Customer Feedback Comments**: Splitted by comment headers `CSAT Survey Comment - `, extracting Date, Customer Segment, and Rating.
+   - **Rollout Status Report**: Parsed into discrete logical blocks representing Document Metadata, Executive Summary, Timeline & Adoption Schedule, and specific Operational Impact Metrics (including AHT, FCR, Repeat Contact, and Confounding CRM Cloud Patch details).
+2. **Provenance Preservation**: Every single record contains a structured `provenance` dictionary mapping it back to its original filename (`file`) and `source_key` from `evidence_sources.yaml`. The original text is preserved exactly without paraphrasing.
+3. **Deterministic ID Generation**: Reproducible IDs are generated using the `source_key_index` format, ensuring the same text files always yield the exact same evidence IDs.
+4. **Safety & Abstention**: Missing optional metadata fields (e.g., segment or product) default to `None` rather than fabricated values. File absence and empty files are handled safely by returning `NOT_AVAILABLE` status results.
+5. **No Causal Inference/LLMs**: Ingestion is strictly deterministic and read-only, laying the data provenance foundation for later qualitative verification. No sentiment analysis, semantic theme extraction, RAG, or causal assumptions are performed.
