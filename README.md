@@ -125,6 +125,10 @@ StoryProof makes a strict distinction between quantitative correlations and caus
     - **Causality Safeguards**: Avoids prohibited causal terminology (e.g., caused, causes, led to, due to) and embeds a mandatory causality disclaimer in both views.
     - **Missing-Input Abstention**: Returns `NOT_AVAILABLE` status cleanly if the input synthesis result is missing, invalid, or empty.
   - [x] **Milestone 4.2: Decision Readiness Flags**
+  - [x] **Milestone 4.3: Action Recommendation Engine**
+    - **Action Schema**: Standardized schema including id, action_type, title, description, priority, observed_finding, reason, justification, structured_refs, evidence_refs, and trigger_info.
+    - **Dynamic Rules Engine**: Maps quantitative shifts and qualitative/readiness findings to operational, systems patch, data stabilization, and quality guardrail actions.
+    - **Causality Policy & Differentiations**: Enforces strictly observational justifications (no causal claims), preserves disclaimer, and tailors recommendations per manager persona (CX vs Ops).
 - [ ] **Milestone 5: Interactive Dashboard & Polish (v1.0)**
   - Design the visual comparison: Traditional BI View vs. StoryProof Verification View.
   - Embed feedback collection, security/access controls simulation, and observability dashboard (latency, LLM cost projection).

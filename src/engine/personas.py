@@ -1,4 +1,5 @@
 from src.engine.readiness import evaluate_decision_readiness
+from src.engine.actions import generate_action_recommendations
 
 def generate_persona_views(synthesis_result):
     """
@@ -308,8 +309,8 @@ def generate_persona_views(synthesis_result):
     ops_readiness = evaluate_decision_readiness(synthesis_result, "OPERATIONS_MANAGER")
     ops_readiness_payload = ops_readiness.get("decision_readiness", {}) if ops_readiness.get("status") == "SUCCESS" else {}
 
-    # Construct the final response
-    return {
+    # Initial views response without actions to pass to action recommendation generator
+    views_res = {
         "status": "SUCCESS",
         "personas": {
             "CX_MANAGER": {
@@ -333,6 +334,46 @@ def generate_persona_views(synthesis_result):
                 "structured_refs": ops_structured_refs,
                 "decision_context": ops_decision_context,
                 "decision_readiness": ops_readiness_payload
+            }
+        }
+    }
+
+    # Generate action recommendations dynamically
+    actions_res = generate_action_recommendations(synthesis_result, views_res)
+    cx_actions = []
+    ops_actions = []
+    if actions_res.get("status") == "SUCCESS":
+        persona_actions = actions_res.get("persona_actions", {})
+        cx_actions = persona_actions.get("CX_MANAGER", [])
+        ops_actions = persona_actions.get("OPERATIONS_MANAGER", [])
+
+    # Construct the final response with actions integrated additively
+    return {
+        "status": "SUCCESS",
+        "personas": {
+            "CX_MANAGER": {
+                "persona": "CX_MANAGER",
+                "priority": cx_priority,
+                "summary": cx_summary,
+                "key_findings": cx_key_findings,
+                "risks": cx_risks,
+                "evidence_refs": cx_evidence_refs,
+                "structured_refs": cx_structured_refs,
+                "decision_context": cx_decision_context,
+                "decision_readiness": cx_readiness_payload,
+                "recommended_actions": cx_actions
+            },
+            "OPERATIONS_MANAGER": {
+                "persona": "OPERATIONS_MANAGER",
+                "priority": ops_priority,
+                "summary": ops_summary,
+                "key_findings": ops_key_findings,
+                "risks": ops_risks,
+                "evidence_refs": ops_evidence_refs,
+                "structured_refs": ops_structured_refs,
+                "decision_context": ops_decision_context,
+                "decision_readiness": ops_readiness_payload,
+                "recommended_actions": ops_actions
             }
         }
     }
