@@ -116,9 +116,15 @@ StoryProof makes a strict distinction between quantitative correlations and caus
   - Implement a deterministic, template-based narrative synthesis layer in `src/engine/synthesis.py` combining materiality (3A), drivers (3B.1), hypotheses (3B.2), and retrieved qualitative evidence (3C.2).
   - Enforce conservative evidence classification (FACT, ASSOCIATION, HYPOTHESIS, CONTEXT, LIMITATION) and strict causality safeguards (neutral verbs only, mandatory causality disclaimer).
   - Implement multi-KPI tension/contradiction detection and reporting to capture divergence between structured speedups and qualitative complaints.
-- [ ] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
-  - Add narrative generation engine matching CX Manager (customer health focus) and Operations Manager (cost/efficiency focus).
-  - Implement the three-tier decision readiness flag: `GREEN` (Decision-Ready), `YELLOW` (Investigation Required), `RED` (Not Justified).
+- [/] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
+  - [x] **Milestone 4.1: Persona Narrative Engine**
+    - **CX Manager Perspective**: Focuses on CSAT, FCR, Repeat Contact Rate, Retention, qualitative customer complaints, and customer-impacting tensions.
+    - **Operations Manager Perspective**: Focuses on AHT, FCR, Repeat Contact Rate, AI-assisted performance, driver contribution, CRM patch confounders, and efficiency vs. resolution-quality tensions.
+    - **Deterministic Template-Based Generation**: Employs neutral observational language using predefined templates.
+    - **Reuse of Verified 3C.3 Findings & Reference Preservation**: Reorganizes and prioritizes existing findings from the synthesis report while preserving `evidence_refs`, `structured_refs`, and `classifications` without inventing any IDs.
+    - **Causality Safeguards**: Avoids prohibited causal terminology (e.g., caused, causes, led to, due to) and embeds a mandatory causality disclaimer in both views.
+    - **Missing-Input Abstention**: Returns `NOT_AVAILABLE` status cleanly if the input synthesis result is missing, invalid, or empty.
+  - [x] **Milestone 4.2: Decision Readiness Flags**
 - [ ] **Milestone 5: Interactive Dashboard & Polish (v1.0)**
   - Design the visual comparison: Traditional BI View vs. StoryProof Verification View.
   - Embed feedback collection, security/access controls simulation, and observability dashboard (latency, LLM cost projection).
