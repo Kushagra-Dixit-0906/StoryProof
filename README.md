@@ -129,6 +129,10 @@ StoryProof makes a strict distinction between quantitative correlations and caus
     - **Action Schema**: Standardized schema including id, action_type, title, description, priority, observed_finding, reason, justification, structured_refs, evidence_refs, and trigger_info.
     - **Dynamic Rules Engine**: Maps quantitative shifts and qualitative/readiness findings to operational, systems patch, data stabilization, and quality guardrail actions.
     - **Causality Policy & Differentiations**: Enforces strictly observational justifications (no causal claims), preserves disclaimer, and tailors recommendations per manager persona (CX vs Ops).
+  - [x] **Milestone 4.4: Analyst Feedback & Audit Logging Layer**
+    - **Schema & Database**: Implements a normalized SQLite audit database (`data/storyproof_audit.db`) with tables for execution runs and analyst feedback.
+    - **Content-Derived Runs**: Computes unique, content-derived run identifiers for each specific execution instant to prevent duplicate logs.
+    - **Human Correction Logging**: Captures analyst ratings, comments, and corrections dynamically, enforcing SQL injection safety, foreign keys, and status validation constraints.
 - [ ] **Milestone 5: Interactive Dashboard & Polish (v1.0)**
   - Design the visual comparison: Traditional BI View vs. StoryProof Verification View.
   - Embed feedback collection, security/access controls simulation, and observability dashboard (latency, LLM cost projection).
