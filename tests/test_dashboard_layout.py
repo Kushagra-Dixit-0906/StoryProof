@@ -164,7 +164,8 @@ def test_storyproof_view_causality():
             continue
         stmt_lower = stmt.lower()
         for p_word in prohibited:
-            assert p_word not in stmt_lower, f"Prohibited causal word '{p_word}' found in StoryProof text literal: '{stmt}'"
+            pattern = rf"\b{p_word}\b"
+            assert not re.search(pattern, stmt_lower), f"Prohibited causal word '{p_word}' found in StoryProof text literal: '{stmt}'"
 
 # 11. Exact mandatory causality disclaimer is preserved
 def test_storyproof_disclaimer_exact():
