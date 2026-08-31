@@ -205,7 +205,7 @@ def check_role_permission(role, permission_type):
     Checks if a given role is authorized to perform a specific action:
     - 'view_cx': CX Manager, Guest, Administrator
     - 'view_ops': Operations Manager, Guest, Administrator
-    - 'submit_feedback': CX Manager, Operations Manager
+    - 'submit_feedback': CX Manager, Operations Manager, Administrator
     - 'view_observability': Administrator
     - 'view_history': Administrator
     """
@@ -214,7 +214,7 @@ def check_role_permission(role, permission_type):
     if permission_type == "view_ops":
         return role in ["Operations Manager", "Guest", "Administrator"]
     if permission_type == "submit_feedback":
-        return role in ["CX Manager", "Operations Manager"]
+        return role in ["CX Manager", "Operations Manager", "Administrator"]
     if permission_type == "view_observability":
         return role in ["Administrator"]
     if permission_type == "view_history":
@@ -343,6 +343,25 @@ def main():
 
     # Core engine synthesis & persona profiling with latency logging
     synthesis_result, persona_views, latency = run_intelligence_pipeline(data_dir, baseline_period, comparison_period)
+
+    # Resolve execution run ID on load
+    cached_key = st.session_state.get("run_key")
+    cached_run_id = st.session_state.get("current_run_id")
+
+    resolved_run_id, new_key, logged_new = resolve_execution_run_id(
+        synthesis_result=synthesis_result,
+        persona_views=persona_views,
+        baseline_period=baseline_period,
+        comparison_period=comparison_period,
+        data_dir=data_dir,
+        cached_run_id=cached_run_id,
+        cached_key=cached_key,
+        db_path="data/storyproof_audit.db"
+    )
+
+    if resolved_run_id:
+        st.session_state["current_run_id"] = resolved_run_id
+        st.session_state["run_key"] = new_key
 
     # 2. Authoritative KPI Calculations (Scorecards data)
     kpis = ["AHT", "FCR", "CSAT", "Repeat_Contact_Rate", "Retention_Rate", "AI_Resolution_Rate"]
@@ -594,61 +613,43 @@ def main():
 
                             if not check_role_permission(user_role, "submit_feedback"):
                                  # Disabled inputs for read-only/unauthorized roles
+                                 st.info("Viewer role: Feedback submission is disabled.")
                                  st.selectbox("Status", ["APPROVED", "REJECTED", "FLAGGED"], index=0, key=f"status_disabled_{action_id}_{idx}", disabled=True)
-                                 st.text_input("Comments", value="", key=f"comments_disabled_{action_id}_{idx}", disabled=True)
+                                 st.text_area("Comments", value="", key=f"comments_disabled_{action_id}_{idx}", disabled=True)
                                  st.text_input("Reviewer Name", value=user_role, key=f"name_disabled_{action_id}_{idx}", disabled=True)
-                                 st.button("Submit Feedback", key=f"btn_disabled_{action_id}_{idx}", disabled=True)
+                                 st.button("Submit Review", key=f"btn_disabled_{action_id}_{idx}", disabled=True)
                             else:
-                                 # Enabled interactive form for managers
-                                 with st.form(key=f"fb_form_{action_id}_{idx}"):
-                                     status = st.selectbox("Status", ["APPROVED", "REJECTED", "FLAGGED"], index=0)
-                                     comments = st.text_input("Comments", value="")
-                                     analyst_name = st.text_input("Reviewer Name", value="Analyst")
-                                     submit_btn = st.form_submit_button("Submit Feedback")
+                                 # Enabled interactive form for managers and administrators
+                                 active_run_id = st.session_state.get("current_run_id")
+                                 if not active_run_id:
+                                      st.error("Feedback submission disabled: No active execution run is registered in the database.")
+                                 else:
+                                      with st.form(key=f"fb_form_{action_id}_{idx}"):
+                                          status = st.selectbox("Status", ["APPROVED", "REJECTED", "FLAGGED"], index=0)
+                                          comments = st.text_area("Comments", value="")
+                                          analyst_name = st.text_input("Reviewer Name", value="Analyst")
+                                          submit_btn = st.form_submit_button("Submit Review")
 
-                                     if submit_btn:
-                                         if not analyst_name.strip():
-                                             st.error("Analyst Name is required.")
-                                         else:
-                                             try:
-                                                 cached_key = st.session_state.get("run_key")
-                                                 cached_run_id = st.session_state.get("current_run_id")
-
-                                                 resolved_run_id, new_key, logged_new = resolve_execution_run_id(
-                                                     synthesis_result=synthesis_result,
-                                                     persona_views=persona_views,
-                                                     baseline_period=baseline_period,
-                                                     comparison_period=comparison_period,
-                                                     data_dir=data_dir,
-                                                     cached_run_id=cached_run_id,
-                                                     cached_key=cached_key,
-                                                     db_path="data/storyproof_audit.db"
-                                                 )
-
-                                                 if logged_new and resolved_run_id:
-                                                     st.session_state["current_run_id"] = resolved_run_id
-                                                     st.session_state["run_key"] = new_key
-                                                 elif not resolved_run_id and not cached_run_id:
-                                                     st.error("Failed to register execution run in audit database.")
-
-                                                 cached_run_id = resolved_run_id
-
-                                                 if cached_run_id:
-                                                     # Write feedback to SQLite DB
-                                                     feedback_id = log_analyst_feedback(
-                                                         run_id=cached_run_id,
-                                                         action_id=action_id,
-                                                         status=status,
-                                                         comments=comments,
-                                                         analyst_name=analyst_name,
-                                                         db_path="data/storyproof_audit.db"
-                                                     )
-                                                     if feedback_id:
-                                                         st.success(f"Feedback successfully saved! Feedback ID: {feedback_id}")
-                                                     else:
-                                                         st.error("Failed to log feedback. Verify database schemas and validation parameters.")
-                                             except Exception as exc:
-                                                 st.error(f"Failed to submit feedback: {str(exc)}")
+                                          if submit_btn:
+                                              if not analyst_name.strip():
+                                                  st.error("Analyst Name is required.")
+                                              else:
+                                                  try:
+                                                      # Write feedback to SQLite DB using the already-active run ID
+                                                      feedback_id = log_analyst_feedback(
+                                                          run_id=active_run_id,
+                                                          action_id=action_id,
+                                                          status=status,
+                                                          comments=comments,
+                                                          analyst_name=analyst_name,
+                                                          db_path="data/storyproof_audit.db"
+                                                      )
+                                                      if feedback_id:
+                                                          st.success(f"Feedback successfully saved! Feedback ID: {feedback_id}")
+                                                      else:
+                                                          st.error("Failed to log feedback. Verify database schemas and validation parameters.")
+                                                  except Exception as exc:
+                                                      st.error(f"Failed to submit feedback: {str(exc)}")
 
     # Administrator Audit View Tab (Admin only)
     if user_role == "Administrator":

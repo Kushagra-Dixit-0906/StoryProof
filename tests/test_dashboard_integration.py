@@ -46,7 +46,7 @@ def test_role_permission_matrix():
     assert check_role_permission("CX Manager", "submit_feedback") is True
     assert check_role_permission("Operations Manager", "submit_feedback") is True
     assert check_role_permission("Guest", "submit_feedback") is False
-    assert check_role_permission("Administrator", "submit_feedback") is False
+    assert check_role_permission("Administrator", "submit_feedback") is True
 
     # view_observability & view_history
     assert check_role_permission("Administrator", "view_observability") is True
@@ -64,7 +64,7 @@ def test_guest_and_manager_submission_rights():
 # 4. Administrator history behavior
 def test_admin_history_permissions():
     assert check_role_permission("Administrator", "view_history")
-    assert not check_role_permission("Administrator", "submit_feedback")
+    assert check_role_permission("Administrator", "submit_feedback")
 
 # 5. Readiness extraction
 def test_readiness_extraction_from_payload():
@@ -377,3 +377,99 @@ def test_regression_compatibility_dashboard_helpers():
     # Period validation checks
     assert validate_reporting_periods(("2026-01-01", "2026-03-31"), ("2026-06-01", "2026-06-30")) is True
     assert validate_reporting_periods(("2026-03-31", "2026-01-01"), ("2026-06-01", "2026-06-30")) is False
+
+# 18. Milestone 5.3 Gaps Verification
+def test_milestone_5_3_gaps(tmp_path):
+    # 1. Administrator feedback permission is True
+    assert check_role_permission("Administrator", "submit_feedback") is True
+
+    # 2. Guest/Viewer remains unable to submit feedback
+    assert check_role_permission("Guest", "submit_feedback") is False
+
+    # Load app.py content for static text checks
+    with open("app.py", "r", encoding="utf-8") as f:
+        app_content = f.read()
+
+    # 3. Viewer warning string exists exactly
+    assert "Viewer role: Feedback submission is disabled." in app_content
+
+    # 4. Feedback form uses text area
+    assert "st.text_area" in app_content
+
+    # 5. Feedback button uses exactly "Submit Review"
+    assert '"Submit Review"' in app_content or "'Submit Review'" in app_content
+
+    # 6. Active run ID is established before feedback submission & cached behavior
+    db_file = tmp_path / "test_5_3_cache.db"
+    db_path = str(db_file)
+    assert initialize_database(db_path) is True
+
+    synthesis_result = {"status": "SUCCESS", "report": []}
+    persona_views = {
+        "status": "SUCCESS",
+        "personas": {
+            "CX_MANAGER": {
+                "decision_readiness": {"readiness_score": 90, "overall_state": "READY"},
+                "recommended_actions": [{"id": "ACT_CX_1", "priority": "HIGH", "title": "Check CSAT"}]
+            },
+            "OPERATIONS_MANAGER": {
+                "decision_readiness": {"readiness_score": 95, "overall_state": "READY"},
+                "recommended_actions": []
+            }
+        }
+    }
+
+    # Mock log_run_fn count to trace executions
+    log_run_calls = 0
+    def mock_log_run(synthesis_result, persona_views, db_path, baseline_period, comparison_period):
+        nonlocal log_run_calls
+        log_run_calls += 1
+        return f"run_id_val_{log_run_calls}"
+
+    # 7. First load establishes the run
+    run_id_1, key_1, logged_1 = resolve_execution_run_id(
+        synthesis_result=synthesis_result,
+        persona_views=persona_views,
+        baseline_period=("2026-01-01", "2026-03-31"),
+        comparison_period=("2026-06-01", "2026-06-30"),
+        data_dir="data",
+        cached_run_id=None,
+        cached_key=None,
+        db_path=db_path,
+        log_run_fn=mock_log_run
+    )
+    assert run_id_1 == "run_id_val_1"
+    assert logged_1 is True
+    assert log_run_calls == 1
+
+    # 8. Repeated use of identical parameters does not create duplicate runs
+    run_id_2, key_2, logged_2 = resolve_execution_run_id(
+        synthesis_result=synthesis_result,
+        persona_views=persona_views,
+        baseline_period=("2026-01-01", "2026-03-31"),
+        comparison_period=("2026-06-01", "2026-06-30"),
+        data_dir="data",
+        cached_run_id=run_id_1,
+        cached_key=key_1,
+        db_path=db_path,
+        log_run_fn=mock_log_run
+    )
+    assert run_id_2 == "run_id_val_1"
+    assert logged_2 is False
+    assert log_run_calls == 1  # No additional calls
+
+    # 9. Changing baseline/comparison/data_dir causes a new run identity
+    run_id_3, key_3, logged_3 = resolve_execution_run_id(
+        synthesis_result=synthesis_result,
+        persona_views=persona_views,
+        baseline_period=("2026-02-01", "2026-03-31"), # Changed start date
+        comparison_period=("2026-06-01", "2026-06-30"),
+        data_dir="data",
+        cached_run_id=run_id_2,
+        cached_key=key_2,
+        db_path=db_path,
+        log_run_fn=mock_log_run
+    )
+    assert run_id_3 == "run_id_val_2"
+    assert logged_3 is True
+    assert log_run_calls == 2
