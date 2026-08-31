@@ -29,6 +29,47 @@ st.set_page_config(
 # STATELESS HELPERS (Pytest Testable)
 # ------------------------------------------------------------------------------
 
+def calculate_database_metrics(db_path="data/storyproof_audit.db"):
+    """
+    Retrieves execution run count and analyst feedback count in an optimized way.
+    Returns (run_count, feedback_count, db_initialized).
+    """
+    import sqlite3
+    if not os.path.exists(db_path):
+        return 0, 0, False
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM execution_runs;")
+        run_count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM analyst_feedback;")
+        feedback_count = cursor.fetchone()[0]
+        conn.close()
+        return run_count, feedback_count, True
+    except Exception as e:
+        print(f"Warning: Failed to fetch database metrics: {e}")
+        return 0, 0, False
+
+def get_all_feedback(db_path="data/storyproof_audit.db"):
+    """
+    Queries all analyst feedback across all runs, ordered chronologically with newest first.
+    """
+    import sqlite3
+    if not os.path.exists(db_path):
+        return []
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM analyst_feedback ORDER BY timestamp DESC;")
+        rows = cursor.fetchall()
+        feedback = [dict(row) for row in rows]
+        conn.close()
+        return feedback
+    except Exception as e:
+        print(f"Warning: Failed to fetch global feedback: {e}")
+        return []
+
 def validate_reporting_periods(baseline_period, comparison_period):
     """
     Validates that periods are tuples/lists of length 2, start <= end,
@@ -301,15 +342,26 @@ def main():
 
     # 1. Sidebar Configurations
     st.sidebar.header("Configuration")
-    data_dir = st.sidebar.text_input("Data Directory", "data")
+    if "data_dir_input" not in st.session_state:
+        st.session_state["data_dir_input"] = "data"
+    if "b_start_input" not in st.session_state:
+        st.session_state["b_start_input"] = "2026-01-01"
+    if "b_end_input" not in st.session_state:
+        st.session_state["b_end_input"] = "2026-03-31"
+    if "c_start_input" not in st.session_state:
+        st.session_state["c_start_input"] = "2026-06-01"
+    if "c_end_input" not in st.session_state:
+        st.session_state["c_end_input"] = "2026-06-30"
+
+    data_dir = st.sidebar.text_input("Data Directory", key="data_dir_input")
 
     st.sidebar.subheader("Baseline Period")
-    b_start = st.sidebar.text_input("Baseline Start", "2026-01-01")
-    b_end = st.sidebar.text_input("Baseline End", "2026-03-31")
+    b_start = st.sidebar.text_input("Baseline Start", key="b_start_input")
+    b_end = st.sidebar.text_input("Baseline End", key="b_end_input")
 
     st.sidebar.subheader("Comparison Period")
-    c_start = st.sidebar.text_input("Comparison Start", "2026-06-01")
-    c_end = st.sidebar.text_input("Comparison End", "2026-06-30")
+    c_start = st.sidebar.text_input("Comparison Start", key="c_start_input")
+    c_end = st.sidebar.text_input("Comparison End", key="c_end_input")
 
     baseline_period = (b_start, b_end)
     comparison_period = (c_start, c_end)
@@ -658,22 +710,19 @@ def main():
 
             # Observability Section
             st.markdown("### System Observability Panel")
-            st.write(f"**Execution Latency**: {latency:.4f} seconds")
 
-            # Database stats
-            runs_list = get_run_history(db_path="data/storyproof_audit.db")
-            total_runs = len(runs_list)
-            total_feedback = 0
-            for r in runs_list:
-                try:
-                    f_list = get_feedback_by_run(r["run_id"], db_path="data/storyproof_audit.db")
-                    total_feedback += len(f_list)
-                except:
-                    pass
+            # Fetch optimized database metrics (Eliminates N+1 query loop)
+            total_runs, total_feedback, db_active = calculate_database_metrics()
 
-            st.write(f"**Database Status**: {'Initialized' if db_initialized else 'Initialization Failed'}")
-            st.write(f"**Logged Execution Runs**: {total_runs}")
-            st.write(f"**Logged Feedback Reviews**: {total_feedback}")
+            col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
+            with col_metric1:
+                st.metric("Execution Latency", f"{latency:.4f}s")
+            with col_metric2:
+                st.metric("Database Status", "Active" if db_active else "Offline")
+            with col_metric3:
+                st.metric("Logged Execution Runs", total_runs)
+            with col_metric4:
+                st.metric("Logged Feedback Reviews", total_feedback)
 
             # Simulated LLM API usage metrics
             cost_metrics = calculate_projected_llm_cost(total_runs)
@@ -690,6 +739,9 @@ def main():
                     f"- Projection Pricing Rate: ${input_rate_per_1k}/1K Input, ${output_rate_per_1k}/1K Output\n"
                     f"- Projected Cost per Run: ${cost_per_run:.4f}\n"
                     f"- Total Cumulative Projected LLM Cost: ${total_projected_cost:.4f}")
+
+            # Fetch run history list
+            runs_list = get_run_history(db_path="data/storyproof_audit.db")
 
             # History table
             st.markdown("### Logged Audit Execution Runs")
@@ -709,7 +761,40 @@ def main():
                     })
                 st.table(pd.DataFrame(history_df))
 
-                # Feedback reviews inspector
+                # Historical run parameter restoration
+                st.markdown("### Restore Run Parameters")
+                run_ids_to_restore = [run.get("run_id") for run in runs_list]
+                selected_restore_run_id = st.selectbox("Select historical Run ID to restore", run_ids_to_restore, key="restore_run_id_admin")
+                if st.button("Restore Selected Run Parameters"):
+                    selected_run = next((run for run in runs_list if run["run_id"] == selected_restore_run_id), None)
+                    if selected_run:
+                        st.session_state["b_start_input"] = selected_run["baseline_start"]
+                        st.session_state["b_end_input"] = selected_run["baseline_end"]
+                        st.session_state["c_start_input"] = selected_run["comparison_start"]
+                        st.session_state["c_end_input"] = selected_run["comparison_end"]
+                        st.success(f"Parameters restored from Run ID: {selected_restore_run_id}! Rerunning dashboard...")
+                        st.rerun()
+
+                # Chronological Feedback Audit Log (across all runs)
+                st.markdown("### Chronological Feedback Audit Log")
+                global_feedback = get_all_feedback()
+                if not global_feedback:
+                    st.info("No feedback reviews logged across any execution runs.")
+                else:
+                    global_df = []
+                    for f in global_feedback:
+                        global_df.append({
+                            "Timestamp": f.get("timestamp"),
+                            "Run ID": f.get("run_id"),
+                            "Action ID": f.get("action_id"),
+                            "Status": f.get("status"),
+                            "Comments": f.get("comments"),
+                            "Analyst": f.get("analyst_name")
+                        })
+                    st.table(pd.DataFrame(global_df))
+
+                # Feedback reviews inspector (Run-specific inspection)
+                st.markdown("### Inspect Feedback Reviews by Run ID")
                 run_ids = [run.get("run_id") for run in runs_list]
                 selected_run_id = st.selectbox("Inspect Action reviews for Run ID", run_ids, key="inspect_run_id_admin")
 

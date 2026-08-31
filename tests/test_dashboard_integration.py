@@ -473,3 +473,91 @@ def test_milestone_5_3_gaps(tmp_path):
     assert run_id_3 == "run_id_val_2"
     assert logged_3 is True
     assert log_run_calls == 2
+
+# 19. Milestone 5.4 Observability Dashboard Verification
+def test_milestone_5_4_observability(tmp_path):
+    from app import calculate_database_metrics, get_all_feedback, check_role_permission
+
+    db_file = tmp_path / "test_5_4_obs.db"
+    db_path = str(db_file)
+    assert initialize_database(db_path) is True
+
+    # 1. Check initial empty counts
+    run_count, feedback_count, db_active = calculate_database_metrics(db_path)
+    assert run_count == 0
+    assert feedback_count == 0
+    assert db_active is True
+
+    # Setup mock runs and feedback
+    synthesis = {"status": "SUCCESS", "report": []}
+    views = {
+        "status": "SUCCESS",
+        "personas": {
+            "CX_MANAGER": {
+                "decision_readiness": {"readiness_score": 90, "overall_state": "READY"},
+                "recommended_actions": [{"id": "ACT_1", "priority": "HIGH", "title": "First Action"}]
+            },
+            "OPERATIONS_MANAGER": {
+                "decision_readiness": {"readiness_score": 95, "overall_state": "READY"},
+                "recommended_actions": [{"id": "ACT_2", "priority": "LOW", "title": "Second Action"}]
+            }
+        }
+    }
+
+    # Log two runs
+    run_id1 = log_execution_run(synthesis, views, db_path, ("2026-01-01", "2026-03-31"), ("2026-06-01", "2026-06-30"))
+    run_id2 = log_execution_run(synthesis, views, db_path, ("2026-02-01", "2026-03-31"), ("2026-06-01", "2026-06-30"))
+    assert run_id1 is not None
+    assert run_id2 is not None
+
+    # Log feedback
+    fb1 = log_analyst_feedback(run_id1, "ACT_1", "APPROVED", "Approved 1", "AnalystA", db_path)
+    fb2 = log_analyst_feedback(run_id2, "ACT_1", "FLAGGED", "Flagged 2", "AnalystB", db_path)
+    assert fb1 is not None
+    assert fb2 is not None
+
+    # 2. Check counts accuracy (Efficient query check)
+    run_count, feedback_count, db_active = calculate_database_metrics(db_path)
+    assert run_count == 2
+    assert feedback_count == 2
+
+    # 3. Global feedback audit retrieval (newest first, run/action IDs associated)
+    all_fb = get_all_feedback(db_path)
+    assert len(all_fb) == 2
+    # Since fb2 was logged after fb1, it should be first chronologically (newest first)
+    assert all_fb[0]["feedback_id"] == fb2
+    assert all_fb[0]["run_id"] == run_id2
+    assert all_fb[0]["action_id"] == "ACT_1"
+    assert all_fb[0]["comments"] == "Flagged 2"
+    assert all_fb[0]["analyst_name"] == "AnalystB"
+
+    assert all_fb[1]["feedback_id"] == fb1
+    assert all_fb[1]["run_id"] == run_id1
+    assert all_fb[1]["action_id"] == "ACT_1"
+    assert all_fb[1]["comments"] == "Approved 1"
+    assert all_fb[1]["analyst_name"] == "AnalystA"
+
+    # 4. Security behavior
+    # Admin can access history/observability
+    assert check_role_permission("Administrator", "view_observability") is True
+    assert check_role_permission("Administrator", "view_history") is True
+    # Non-admin roles cannot
+    assert check_role_permission("Guest", "view_observability") is False
+    assert check_role_permission("CX Manager", "view_history") is False
+    assert check_role_permission("Operations Manager", "view_history") is False
+
+    # 5. UI elements static check
+    with open("app.py", "r", encoding="utf-8") as f:
+        app_code = f.read()
+
+    # Verify st.columns and st.metric are used in the panel
+    assert "st.columns(" in app_code
+    assert "st.metric(" in app_code
+
+    # Verify simulated LLM cost projections are explicitly labeled
+    assert "SIMULATED / PROJECTED" in app_code
+    assert "total_projected_cost" in app_code
+
+    # Verify Parameter Restoration elements exist
+    assert "st.session_state[\"b_start_input\"] = " in app_code
+    assert "st.rerun()" in app_code
