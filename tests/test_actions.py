@@ -562,3 +562,54 @@ def test_empty_findings_safety():
     assert res["status"] == "SUCCESS"
     assert res["persona_actions"]["CX_MANAGER"] == []
     assert res["persona_actions"]["OPERATIONS_MANAGER"] == []
+
+# 25. Hardened Action Recommendation Schema completeness
+def test_hardened_action_recommendation_schema():
+    mock_syn = get_clean_mock_synthesis()
+    mock_syn["report"].append({
+        "title": "Data Limitations",
+        "statements": [
+            {
+                "text": "CSAT could not be fully analyzed as it has insufficient history (15 days available, 90 days required).",
+                "classification": "LIMITATION",
+                "structured_refs": ["CSAT_materiality"],
+                "evidence_refs": []
+            }
+        ]
+    })
+    mock_syn["report"][2]["statements"].append({
+        "text": "CRM patch hypothesis exhibits STRONG_ASSOCIATION with AHT shifts.",
+        "classification": "ASSOCIATION",
+        "structured_refs": ["AHT_crm_hypothesis"],
+        "evidence_refs": ["crm_report_1"]
+    })
+    mock_syn["report"][4]["statements"].append({
+        "text": "Handling time decreased materially, while qualitative evidence contains repeated reports of unresolved interactions.",
+        "classification": "ASSOCIATION",
+        "structured_refs": ["AHT_materiality"],
+        "evidence_refs": ["support_transcripts_1"]
+    })
+
+    views = generate_persona_views(mock_syn)
+    res = generate_action_recommendations(mock_syn, views)
+    assert res["status"] == "SUCCESS"
+
+    expected_hardened_keys = [
+        "driver", "controllable_lever", "action", "expected_impact",
+        "owner", "confidence", "monitoring_plan", "trigger",
+        "id", "action_type", "title", "description", "priority",
+        "observed_finding", "reason", "justification",
+        "structured_refs", "evidence_refs", "trigger_info"
+    ]
+
+    for p_key in ["CX_MANAGER", "OPERATIONS_MANAGER"]:
+        for act in res["persona_actions"][p_key]:
+            for key in expected_hardened_keys:
+                assert key in act, f"Missing {key} in action {act.get('id')}"
+                assert act[key] is not None, f"Key {key} is None in action {act.get('id')}"
+            assert act["owner"] in ["Support Operations Manager", "CX Manager"]
+            assert len(act["driver"]) > 0
+            assert len(act["controllable_lever"]) > 0
+            assert len(act["action"]) > 0
+            assert len(act["expected_impact"]) > 0
+            assert len(act["monitoring_plan"]) > 0

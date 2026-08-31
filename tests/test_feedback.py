@@ -9,7 +9,8 @@ from src.feedback.handler import (
     log_execution_run,
     log_analyst_feedback,
     get_run_history,
-    get_feedback_by_run
+    get_feedback_by_run,
+    get_action_governance_signal
 )
 from src.engine.synthesis import generate_synthesis_report
 from src.engine.personas import generate_persona_views
@@ -539,4 +540,195 @@ def test_sqlite_migration_path(tmp_path):
     assert new_row["cx_readiness_score"] == 85
     assert new_row["actions_count"] == 2
     assert new_row["actions_list"] == "ACT_CX_1,ACT_OPS_1"
+
+# ------------------------------------------------------------------------------
+# GOVERNANCE SIGNAL AND FEEDBACK LOOP TESTS
+# ------------------------------------------------------------------------------
+
+def make_test_views_with_actions(action_ids):
+    cx_acts = [{"id": aid, "priority": "HIGH", "title": f"Action {aid}"} for aid in action_ids if "CX" in aid or "ACTION_A" in aid]
+    ops_acts = [{"id": aid, "priority": "MEDIUM", "title": f"Action {aid}"} for aid in action_ids if "CX" not in aid and "ACTION_A" not in aid]
+    return {
+        "status": "SUCCESS",
+        "personas": {
+            "CX_MANAGER": {
+                "decision_readiness": {"readiness_score": 85, "overall_state": "READY_WITH_RESERVATIONS"},
+                "recommended_actions": cx_acts
+            },
+            "OPERATIONS_MANAGER": {
+                "decision_readiness": {"readiness_score": 90, "overall_state": "READY"},
+                "recommended_actions": ops_acts
+            }
+        }
+    }
+
+def test_governance_signal_no_feedback(tmp_path):
+    """1. No feedback history produces a neutral/default signal."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+
+    signal = get_action_governance_signal("ACT_CX_STABILIZE_CSAT", db_path=db_path)
+    assert signal["action_id"] == "ACT_CX_STABILIZE_CSAT"
+    assert signal["total_reviews"] == 0
+    assert signal["approved_count"] == 0
+    assert signal["rejected_count"] == 0
+    assert signal["flagged_count"] == 0
+    assert signal["approval_rate"] is None
+    assert signal["acceptance_score"] is None
+    assert signal["status"] == "NO_PRIOR_FEEDBACK"
+    assert "No prior human feedback" in signal["label"]
+    assert signal["recent_comments"] == []
+
+def test_governance_signal_approved_feedback(tmp_path):
+    """2. APPROVED feedback increases the corresponding historical acceptance signal."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+    syn = get_mock_synthesis()
+    views = make_test_views_with_actions(["ACT_OPS_PATCH_AHT"])
+    run_id = log_execution_run(syn, views, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+
+    # Initial state is neutral
+    s0 = get_action_governance_signal("ACT_OPS_PATCH_AHT", db_path=db_path)
+    assert s0["total_reviews"] == 0
+
+    # Log 3 approved feedbacks
+    for i in range(3):
+        fb_id = log_analyst_feedback(
+            run_id=run_id,
+            action_id="ACT_OPS_PATCH_AHT",
+            status="APPROVED",
+            comments=f"Action verified and approved by senior engineer {i}",
+            analyst_name=f"Analyst_{i}",
+            db_path=db_path
+        )
+        assert fb_id is not None
+
+    s1 = get_action_governance_signal("ACT_OPS_PATCH_AHT", db_path=db_path)
+    assert s1["total_reviews"] == 3
+    assert s1["approved_count"] == 3
+    assert s1["rejected_count"] == 0
+    assert s1["approval_rate"] == 1.0
+    assert s1["acceptance_score"] == 1.0
+    assert s1["status"] == "HIGH_HISTORICAL_ACCEPTANCE"
+    assert "High Analyst Acceptance" in s1["label"]
+    assert len(s1["recent_comments"]) == 3
+
+def test_governance_signal_rejected_feedback(tmp_path):
+    """3. REJECTED feedback decreases the historical acceptance signal."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+    syn = get_mock_synthesis()
+    views = make_test_views_with_actions(["ACT_OPS_TENSION_AHT"])
+    run_id = log_execution_run(syn, views, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+
+    # Log 1 approved and 3 rejected
+    log_analyst_feedback(run_id, "ACT_OPS_TENSION_AHT", "APPROVED", "Approved initially", "Analyst_A", db_path=db_path)
+    log_analyst_feedback(run_id, "ACT_OPS_TENSION_AHT", "REJECTED", "Rejected due to operational timing", "Analyst_B", db_path=db_path)
+    log_analyst_feedback(run_id, "ACT_OPS_TENSION_AHT", "REJECTED", "Not actionable at current volume", "Analyst_C", db_path=db_path)
+    log_analyst_feedback(run_id, "ACT_OPS_TENSION_AHT", "REJECTED", "Alternative mitigation preferred", "Analyst_D", db_path=db_path)
+
+    signal = get_action_governance_signal("ACT_OPS_TENSION_AHT", db_path=db_path)
+    assert signal["total_reviews"] == 4
+    assert signal["approved_count"] == 1
+    assert signal["rejected_count"] == 3
+    assert signal["approval_rate"] == 0.25
+    assert signal["rejection_rate"] == 0.75
+    assert signal["status"] == "FREQUENTLY_REJECTED"
+    assert "Frequently Rejected by Analysts" in signal["label"]
+
+def test_governance_signal_flagged_feedback(tmp_path):
+    """4. FLAGGED is handled separately and does NOT count as approval."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+    syn = get_mock_synthesis()
+    views = make_test_views_with_actions(["ACT_CX_TENSION_FCR"])
+    run_id = log_execution_run(syn, views, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+
+    # Log 2 flagged and 1 approved
+    log_analyst_feedback(run_id, "ACT_CX_TENSION_FCR", "FLAGGED", "Need more evidence on customer tier", "Analyst_1", db_path=db_path)
+    log_analyst_feedback(run_id, "ACT_CX_TENSION_FCR", "FLAGGED", "Flagging for executive review", "Analyst_2", db_path=db_path)
+    log_analyst_feedback(run_id, "ACT_CX_TENSION_FCR", "APPROVED", "Approved tentatively", "Analyst_3", db_path=db_path)
+
+    signal = get_action_governance_signal("ACT_CX_TENSION_FCR", db_path=db_path)
+    assert signal["total_reviews"] == 3
+    assert signal["approved_count"] == 1
+    assert signal["rejected_count"] == 0
+    assert signal["flagged_count"] == 2
+    # Flagged does not count as approval: approval_rate is 1/3 (0.3333), not 3/3
+    assert pytest.approx(signal["approval_rate"], 0.01) == 0.3333
+    assert signal["status"] == "FREQUENTLY_FLAGGED"
+    assert "Frequently Flagged for Review" in signal["label"]
+
+def test_governance_signal_action_isolation(tmp_path):
+    """5. Unrelated action IDs/runs do not cross-contaminate the calculation."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+    syn = get_mock_synthesis()
+    views1 = make_test_views_with_actions(["ACTION_A"])
+    views2 = make_test_views_with_actions(["ACTION_B"])
+    run1 = log_execution_run(syn, views1, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+    run2 = log_execution_run(syn, views2, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+
+    # Log 5 approvals for Action A
+    for _ in range(5):
+        log_analyst_feedback(run1, "ACTION_A", "APPROVED", "Good", "Analyst_1", db_path=db_path)
+
+    # Log 5 rejections for Action B
+    for _ in range(5):
+        log_analyst_feedback(run2, "ACTION_B", "REJECTED", "Bad", "Analyst_2", db_path=db_path)
+
+    signal_a = get_action_governance_signal("ACTION_A", db_path=db_path)
+    signal_b = get_action_governance_signal("ACTION_B", db_path=db_path)
+    signal_c = get_action_governance_signal("ACTION_C", db_path=db_path)
+
+    assert signal_a["total_reviews"] == 5
+    assert signal_a["approved_count"] == 5
+    assert signal_a["rejected_count"] == 0
+    assert signal_a["status"] == "HIGH_HISTORICAL_ACCEPTANCE"
+
+    assert signal_b["total_reviews"] == 5
+    assert signal_b["approved_count"] == 0
+    assert signal_b["rejected_count"] == 5
+    assert signal_b["status"] == "FREQUENTLY_REJECTED"
+
+    assert signal_c["total_reviews"] == 0
+    assert signal_c["status"] == "NO_PRIOR_FEEDBACK"
+
+def test_governance_signal_preserves_evidence_confidence(tmp_path):
+    """6. Recommendation/evidence confidence is preserved and distinct from historical feedback signal."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+    syn = get_mock_synthesis()
+    views = make_test_views_with_actions(["ACT_OPS_STABILIZE_AHT"])
+    run_id = log_execution_run(syn, views, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+
+    # Simulate an action recommendation object with underlying evidence confidence
+    action_item = {
+        "id": "ACT_OPS_STABILIZE_AHT",
+        "action_type": "STABILIZE_BASELINE",
+        "priority": "HIGH",
+        "confidence": "LOW_BASELINE_CONFIDENCE",
+        "driver": "AHT exhibits an insufficient historical baseline.",
+        "controllable_lever": "Data Ingestion & Baseline Monitoring Window",
+        "action": "Establish AHT baseline before scaling",
+        "expected_impact": "Prevents false-positive automation scaling on unverified baseline statistics.",
+        "owner": "Support Operations Manager",
+        "monitoring_plan": "Track AHT daily ingestion volume until minimum history requirements are satisfied."
+    }
+
+    # Log 3 REJECTED reviews (simulating analysts rejecting the operational pause)
+    for i in range(3):
+        log_analyst_feedback(run_id, action_item["id"], "REJECTED", "Want to proceed anyway", f"Analyst_{i}", db_path=db_path)
+
+    # Compute governance signal
+    gov_signal = get_action_governance_signal(action_item["id"], db_path=db_path)
+
+    # Verify that the action's evidence confidence remains untouched
+    assert action_item["confidence"] == "LOW_BASELINE_CONFIDENCE"
+    assert action_item["priority"] == "HIGH"
+
+    # Verify that governance signal is distinct
+    assert gov_signal["status"] == "FREQUENTLY_REJECTED"
+    assert gov_signal["total_reviews"] == 3
+    assert gov_signal["rejection_rate"] == 1.0
 

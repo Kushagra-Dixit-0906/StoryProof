@@ -166,6 +166,7 @@ def generate_action_recommendations(synthesis_result, persona_views):
                     # Structured references
                     struct_refs = [f"{metric}_materiality"]
                     
+                    owner_val = "Support Operations Manager" if persona_name == "OPERATIONS_MANAGER" else "CX Manager"
                     actions_list.append({
                         "id": f"ACT_{persona_name}_STABILIZE_{metric}",
                         "action_type": "STABILIZE_BASELINE",
@@ -173,6 +174,14 @@ def generate_action_recommendations(synthesis_result, persona_views):
                         "description": "Defer scaling and monitor baseline volume until configured history requirements are satisfied.",
                         "priority": priority,
                         "observed_finding": f"{metric_name_clean} exhibits an insufficient historical baseline.",
+                        "driver": f"{metric_name_clean} exhibits an insufficient historical baseline.",
+                        "controllable_lever": "Data Ingestion & Baseline Monitoring Window",
+                        "action": f"Establish {metric_name_clean} baseline before scaling",
+                        "expected_impact": "Prevents false-positive automation scaling on unverified baseline statistics.",
+                        "owner": owner_val,
+                        "confidence": "LOW_BASELINE_CONFIDENCE",
+                        "monitoring_plan": f"Track {metric_name_clean} daily ingestion volume until minimum history requirements are satisfied.",
+                        "trigger": f"insufficient_history on {metric}",
                         "reason": "The metric fails the configured history requirements, preventing standard baseline comparison.",
                         "justification": justification,
                         "structured_refs": struct_refs,
@@ -227,6 +236,7 @@ def generate_action_recommendations(synthesis_result, persona_views):
             # Priority: HIGH if the KPI change is material, else MEDIUM
             priority = "HIGH" if kpi in material_kpis else "MEDIUM"
             kpi_name_clean = kpi.replace("_", " ")
+            owner_val = "Support Operations Manager" if persona_name == "OPERATIONS_MANAGER" else "CX Manager"
             
             actions_list.append({
                 "id": f"ACT_{persona_name}_PATCH_{kpi}",
@@ -235,6 +245,14 @@ def generate_action_recommendations(synthesis_result, persona_views):
                 "description": "Isolate affected segment logs and verify patch stability to identify potential system-level overlap.",
                 "priority": priority,
                 "observed_finding": f"{kpi_name_clean} shifts coincide with both the automated assistant rollout and the CRM Cloud patch.",
+                "driver": f"{kpi_name_clean} shifts coincide with both the automated assistant rollout and the CRM Cloud patch.",
+                "controllable_lever": "Software Release Isolation & Segment Patch Deployment",
+                "action": f"Isolate CRM patch association for {kpi_name_clean}",
+                "expected_impact": "Disentangles concurrent system update noise from core workflow trends.",
+                "owner": owner_val,
+                "confidence": "MODERATE_ASSOCIATION",
+                "monitoring_plan": "Monitor pre/post patch error telemetry and ticket volume across CRM Cloud vs. control product segments.",
+                "trigger": f"high_ambiguity on {kpi}",
                 "reason": "Multiple concurrent events (AI assistant rollout and CRM Cloud patch) exhibit overlapping associations, creating significant ambiguity.",
                 "justification": f"Both the rollout and the CRM Cloud patch show moderate-to-strong operational associations in the same period.",
                 "structured_refs": sorted(s_refs) if s_refs else [f"{kpi}_crm_hypothesis"],
@@ -275,6 +293,7 @@ def generate_action_recommendations(synthesis_result, persona_views):
                         # Priority: HIGH if any material KPI is present in the statement references/text, else MEDIUM
                         has_material = any(mk in stmt["text"] or any(mk in r for r in stmt["structured_refs"]) for mk in material_kpis)
                         priority = "HIGH" if has_material else "MEDIUM"
+                        owner_val = "Support Operations Manager" if persona_name == "OPERATIONS_MANAGER" else "CX Manager"
                         
                         stmt_ref_clean = stmt["structured_refs"][0] if stmt["structured_refs"] else "general"
                         
@@ -285,6 +304,14 @@ def generate_action_recommendations(synthesis_result, persona_views):
                             "description": "Add auto-closure checks and revise routing rules to prevent premature ticket closure.",
                             "priority": priority,
                             "observed_finding": stmt["text"],
+                            "driver": stmt["text"],
+                            "controllable_lever": "Bot Routing Rules & Ticket Auto-Closure Thresholds",
+                            "action": "Implement resolution quality guardrails",
+                            "expected_impact": "Reduces premature contact closures and curtails repeat contact loops.",
+                            "owner": owner_val,
+                            "confidence": "HIGH_TENSION_RISK",
+                            "monitoring_plan": "Track 48-hour Repeat Contact Rate and customer survey sentiment post-interaction.",
+                            "trigger": "metric_tension_detected",
                             "reason": "Efficiency gains in operational speed metrics coincide with unresolved customer feedback or repeat contacts.",
                             "justification": "Qualitative logs contain complaints regarding premature ticket closure or unresolved issues despite quantitative speedups.",
                             "structured_refs": sorted(stmt["structured_refs"]),
@@ -339,6 +366,7 @@ def generate_action_recommendations(synthesis_result, persona_views):
                                         kpi_struct_refs.append(ref)
                                         
                         kpi_name_clean = kpi.replace("_", " ")
+                        owner_val = "Support Operations Manager" if persona_name == "OPERATIONS_MANAGER" else "CX Manager"
                         
                         actions_list.append({
                             "id": f"ACT_{persona_name}_OPTIMIZE_{kpi}",
@@ -347,6 +375,14 @@ def generate_action_recommendations(synthesis_result, persona_views):
                             "description": "Monitor expansion of the automated channel under the current segment mix, verifying CSAT stability.",
                             "priority": "LOW",
                             "observed_finding": f"{kpi_name_clean} has registered a material positive shift.",
+                            "driver": f"{kpi_name_clean} has registered a material positive shift.",
+                            "controllable_lever": "Workflow Automation Rollout & Channel Allocation",
+                            "action": f"Optimize and expand {kpi_name_clean} processes",
+                            "expected_impact": "Safely scales automated support capacity while preserving customer experience quality.",
+                            "owner": owner_val,
+                            "confidence": "VERIFIED_READY",
+                            "monitoring_plan": "Continuously track CSAT and FCR alongside AHT to guard against resolution quality degradation.",
+                            "trigger": "ready_for_optimization",
                             "reason": f"The material improvement in {kpi_name_clean} is verified by qualitative evidence with no unresolved tensions.",
                             "justification": f"The quantitative shift is verified by qualitative feedback and meets all decision readiness criteria.",
                             "structured_refs": sorted(kpi_struct_refs),

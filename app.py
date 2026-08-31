@@ -13,7 +13,8 @@ from src.feedback.handler import (
     log_execution_run,
     log_analyst_feedback,
     get_run_history,
-    get_feedback_by_run
+    get_feedback_by_run,
+    get_action_governance_signal
 )
 import plotly.express as px
 import plotly.graph_objects as go
@@ -261,6 +262,38 @@ def check_role_permission(role, permission_type):
     if permission_type == "view_history":
         return role in ["Administrator"]
     return False
+
+def get_evidence_provenance_badge(refs):
+    """
+    Derives transparent provenance, freshness, and analytical method metadata for a list of references.
+    Explicitly separates dynamic event timestamps from configured cadences.
+    """
+    if not refs:
+        return []
+    details = []
+    for ref in refs:
+        if ref.startswith("support_transcripts"):
+            details.append(f"Ticket Transcript `{ref}` (Event Date | Raw Chat Ticket | Keyword Relevance Scoring)")
+        elif ref.startswith("customer_feedback"):
+            details.append(f"CSAT Review `{ref}` (Event Date | Qualitative Feedback | Sentiment Categorization)")
+        elif ref.startswith("rollout_report"):
+            details.append(f"Project Memo `{ref}` (Doc Date: 2026-06-30 | Operations Status Report | Document Parsing)")
+        elif "_materiality" in ref:
+            kpi = ref.replace("_materiality", "")
+            if kpi in ["AHT", "FCR", "Repeat_Contact_Rate"]:
+                details.append(f"`{ref}` (Source: support_daily.csv | Cadence: Daily | Method: Z-Score Materiality Gate)")
+            elif kpi == "CSAT":
+                details.append(f"`{ref}` (Source: cx_weekly.csv | Cadence: Weekly | Method: Absolute Threshold Gate)")
+            elif kpi == "Retention_Rate":
+                details.append(f"`{ref}` (Source: crm_monthly.csv | Cadence: Monthly | Method: Trailing Baseline Gate)")
+            elif kpi == "AI_Resolution_Rate":
+                details.append(f"`{ref}` (Source: ai_resolution_rate.csv | Cadence: Daily | Method: History Gate [21/60d])")
+        elif "_driver" in ref:
+            details.append(f"`{ref}` (Method: Shapley Mix-Rate Variance Decomposition | Zero Error Reconciliation)")
+        elif "_hypothesis" in ref:
+            details.append(f"`{ref}` (Method: Multi-Hypothesis Association & Confounder Control Concentration)")
+    return details
+
 
 def calculate_projected_llm_cost(total_runs):
     """
@@ -594,6 +627,11 @@ def main():
                             refs = s_refs + e_refs
                             ref_str = f" [Refs: {', '.join(refs)}]" if refs else ""
                             st.write(f"- **[{cls}]** {text} *{ref_str}*")
+                            prov_details = get_evidence_provenance_badge(refs)
+                            if prov_details:
+                                with st.expander(f"Traceability & Freshness ({len(prov_details)} sources)", expanded=False):
+                                    for pd_item in prov_details:
+                                        st.caption(f"• {pd_item}")
 
                 with col_risk:
                     st.markdown("#### Identified Risks & Concerns")
@@ -609,6 +647,11 @@ def main():
                             refs = s_refs + e_refs
                             ref_str = f" [Refs: {', '.join(refs)}]" if refs else ""
                             st.write(f"- **[{cls}]** {text} *{ref_str}*")
+                            prov_details = get_evidence_provenance_badge(refs)
+                            if prov_details:
+                                with st.expander(f"Traceability & Freshness ({len(prov_details)} sources)", expanded=False):
+                                    for pd_item in prov_details:
+                                        st.caption(f"• {pd_item}")
 
                 # 3. Decision Readiness Assessment
                 st.markdown("### Decision Readiness Assessment")
@@ -647,17 +690,53 @@ def main():
                     for idx, action in enumerate(actions):
                         action_id = action.get("id", "N/A")
                         with st.expander(f"Action: {action_id} — {action.get('title', 'Recommendation')} (Priority: {action.get('priority', 'N/A')})"):
-                            st.write(f"**Type**: {action.get('action_type', 'N/A')}")
-                            st.write(f"**Description**: {action.get('description', 'N/A')}")
-                            st.write(f"**Observed Finding**: {action.get('observed_finding', 'N/A')}")
-                            st.write(f"**Justification**: {action.get('justification', 'N/A')}")
+                            st.write(f"- **WHY (Driver / Finding)**: {action.get('driver') or action.get('observed_finding', 'N/A')}")
+                            if action.get("controllable_lever"):
+                                st.write(f"- **WHAT LEVER (Controllable Lever)**: {action.get('controllable_lever')}")
+                            st.write(f"- **WHAT ACTION**: {action.get('action') or action.get('description', 'N/A')}")
+                            if action.get("owner"):
+                                st.write(f"- **WHO OWNS IT**: {action.get('owner')}")
+                            if action.get("expected_impact"):
+                                st.write(f"- **EXPECTED IMPACT**: {action.get('expected_impact')}")
+                            st.write(f"- **EVIDENCE CONFIDENCE**: `{action.get('confidence') or action.get('priority', 'N/A')}` (Priority: {action.get('priority', 'N/A')})")
+                            if action.get("monitoring_plan"):
+                                st.write(f"- **HOW TO MONITOR**: {action.get('monitoring_plan')}")
+                            if action.get("justification"):
+                                st.write(f"- **Analytical Context**: {action.get('justification')}")
+                            if action.get("reason"):
+                                st.write(f"- **Operational Trigger**: {action.get('reason')}")
+                            if action.get("trigger_info"):
+                                trigger_dict = action.get("trigger_info", {})
+                                if isinstance(trigger_dict, dict):
+                                    t_details = [f"{k}: {v}" for k, v in trigger_dict.items()]
+                                    st.write(f"- **Trigger Detail**: {', '.join(t_details)}")
 
                             s_refs = action.get("structured_refs", [])
                             e_refs = action.get("evidence_refs", [])
                             if s_refs:
-                                 st.write(f"**Structured References**: {', '.join(s_refs)}")
+                                st.write(f"- **Structured References**: {', '.join(s_refs)}")
                             if e_refs:
-                                 st.write(f"**Evidence References**: {', '.join(e_refs)}")
+                                st.write(f"- **Evidence References**: {', '.join(e_refs)}")
+
+                            # Human-in-the-Loop Governance Signal
+                            gov_signal = get_action_governance_signal(action_id=action_id, db_path="data/storyproof_audit.db")
+                            st.write("---")
+                            st.markdown("##### 🏛️ Human-in-the-Loop Governance Signal")
+                            if gov_signal["status"] == "NO_PRIOR_FEEDBACK":
+                                st.info("ℹ️ **Governance Status**: No prior human feedback recorded for this action in SQLite audit database.")
+                            elif gov_signal["status"] == "HIGH_HISTORICAL_ACCEPTANCE":
+                                st.success(f"✅ **Governance Status**: {gov_signal['label']}")
+                            elif gov_signal["status"] == "FREQUENTLY_REJECTED":
+                                st.error(f"❌ **Governance Status**: {gov_signal['label']}")
+                            elif gov_signal["status"] == "FREQUENTLY_FLAGGED":
+                                st.warning(f"⚠️ **Governance Status**: {gov_signal['label']}")
+                            else:
+                                st.info(f"📊 **Governance Status**: {gov_signal['label']}")
+
+                            if gov_signal.get("recent_comments"):
+                                with st.expander("View Prior Analyst Feedback Notes", expanded=False):
+                                    for comm in gov_signal["recent_comments"]:
+                                        st.write(f"- **[{comm['status']}]** by *{comm['analyst']}* ({comm['timestamp'][:10]}): \"{comm['comment']}\"")
 
                             # Analyst review form
                             st.write("---")

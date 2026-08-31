@@ -116,7 +116,7 @@ StoryProof makes a strict distinction between quantitative correlations and caus
   - Implement a deterministic, template-based narrative synthesis layer in `src/engine/synthesis.py` combining materiality (3A), drivers (3B.1), hypotheses (3B.2), and retrieved qualitative evidence (3C.2).
   - Enforce conservative evidence classification (FACT, ASSOCIATION, HYPOTHESIS, CONTEXT, LIMITATION) and strict causality safeguards (neutral verbs only, mandatory causality disclaimer).
   - Implement multi-KPI tension/contradiction detection and reporting to capture divergence between structured speedups and qualitative complaints.
-- [/] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
+- [x] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
   - [x] **Milestone 4.1: Persona Narrative Engine**
     - **CX Manager Perspective**: Focuses on CSAT, FCR, Repeat Contact Rate, Retention, qualitative customer complaints, and customer-impacting tensions.
     - **Operations Manager Perspective**: Focuses on AHT, FCR, Repeat Contact Rate, AI-assisted performance, driver contribution, CRM patch confounders, and efficiency vs. resolution-quality tensions.
@@ -133,9 +133,21 @@ StoryProof makes a strict distinction between quantitative correlations and caus
     - **Schema & Database**: Implements a normalized SQLite audit database (`data/storyproof_audit.db`) with tables for execution runs and analyst feedback.
     - **Content-Derived Runs**: Computes unique, content-derived run identifiers for each specific execution instant to prevent duplicate logs.
     - **Human Correction Logging**: Captures analyst ratings, comments, and corrections dynamically, enforcing SQL injection safety, foreign keys, and status validation constraints.
-- [ ] **Milestone 5: Interactive Dashboard & Polish (v1.0)**
-  - Design the visual comparison: Traditional BI View vs. StoryProof Verification View.
-  - Embed feedback collection, security/access controls simulation, and observability dashboard (latency, LLM cost projection).
+- [x] **Milestone 5: Interactive Dashboard & Observability (v1.0)**
+  - [x] **Milestone 5.1: Core Dual-View Layout & Quantitative Charts**
+    - Visual comparison: Traditional BI View vs. StoryProof Verification View.
+    - KPI scorecards with unit conversions and baseline vs. comparison delta calculations.
+    - Interactive Plotly time-series trend charts with period shading.
+  - [x] **Milestone 5.2: Persona Views, Readiness Banners & Action Recommendations**
+    - Persona-specific narrative summaries and prioritized key findings / risks.
+    - Decision readiness status cards, progress meters, and actionable recommendations.
+  - [x] **Milestone 5.3: Security Role Simulation & Feedback Collection Forms**
+    - Role-based security access simulation (Guest, CX Manager, Operations Manager, Administrator).
+    - Review forms with validation and SQLite persistence.
+  - [x] **Milestone 5.4: Run History Audit Trail & Observability Dashboard**
+    - System Observability Panel with actual latency and projected LLM cost breakdown.
+    - Run execution history and global chronological feedback audit log.
+    - Historical run parameter restoration directly in sidebar.
 ## ⚖️ Milestone 3A — Materiality & Change Detection Engine
 
 StoryProof's Materiality Engine is a deterministic analytical layer that acts as the first gate in decision intelligence: determining whether a KPI change is meaningful and whether there is sufficient history to analyze it.
@@ -242,3 +254,75 @@ Milestone 3C.3 introduces a deterministic synthesis layer in `src/engine/synthes
 3. **Multi-KPI Synthesis**: Synthesizes findings across AHT, FCR, CSAT, Repeat Contact Rate, Retention Rate, and AI Resolution Rate while respecting their individual units, grains, thresholds, and insufficient history limitations.
 4. **Causality Safeguards & Disclaimer**: Implements a strict causality-language guard (verifying no causal verbs like "caused", "resulted in", or "driven by" are present in generated statements) and appends a mandatory **Causality Disclaimer**: `"The available evidence does not establish causality; observed changes represent associations and candidate explanations only."`
 5. **No Recalculation**: Preserves the exact values, statuses, and boundaries computed upstream in previous milestones (such as AI Resolution Rate's insufficient-history flag from 3A).
+
+---
+
+## 🎯 Milestone 4 — Persona Views, Decision Readiness & Action Recommendations
+
+### Action Recommendation Schema
+Every recommendation produced by `src/engine/actions.py` is structured across 7 explicit operational dimensions:
+- **`driver` / `observed_finding`**: The observed KPI shift or evidence tension that triggered the action.
+- **`controllable_lever`**: The specific business lever or configuration under managerial control (e.g., *Bot Routing Rules*, *Software Release Isolation*, *Data Ingestion Window*).
+- **`action` / `title`**: The concrete operational instruction.
+- **`expected_impact`**: The non-causal anticipated operational outcome.
+- **`owner`**: Accountable manager persona (*Support Operations Manager* or *CX Manager*).
+- **`confidence`**: Conservative, evidence-derived confidence class (*`LOW_BASELINE_CONFIDENCE`*, *`MODERATE_ASSOCIATION`*, *`HIGH_TENSION_RISK`*, *`VERIFIED_READY`*).
+- **`monitoring_plan`**: Specific leading indicators and cadence to monitor post-intervention.
+
+### Action Types & Rules Engine
+1. `STABILIZE_BASELINE`: Triggered when insufficient historical data exists (e.g., sparse AI Resolution Rate). Defer scaling and monitor volume.
+2. `SYSTEM_PATCH`: Triggered when confounding events coincide (e.g., CRM Cloud May patch). Isolate segment telemetry before attribution.
+3. `RESOLUTION_GUARDRAIL`: Triggered when efficiency gains tension with customer dissatisfaction. Enforce auto-closure checks.
+4. `OPERATIONAL_OPTIMIZATION`: Triggered only under verified improvements with zero active risk flags.
+
+---
+
+## 🏛️ Human-in-the-Loop Governance Loop
+
+StoryProof incorporates a lightweight, deterministic feedback loop via SQLite (`data/storyproof_audit.db`):
+- **Deterministic Aggregation**: When action recommendations are evaluated, `get_action_governance_signal()` aggregates prior analyst reviews (`APPROVED`, `REJECTED`, `FLAGGED`) for each specific `action_id`.
+- **Governance Signals**:
+  - `NO_PRIOR_FEEDBACK`: Neutral default signal when no historical reviews exist.
+  - `HIGH_HISTORICAL_ACCEPTANCE`: $\ge 70\%$ historical approval rate across reviews.
+  - `FREQUENTLY_REJECTED`: $\ge 50\%$ historical rejection rate.
+  - `FREQUENTLY_FLAGGED`: Dominant flagged reviews requiring heightened oversight.
+  - `MIXED_FEEDBACK`: Dispersed review ratings.
+- **Strict Evidence Separation**: Historical analyst acceptance score is displayed alongside current recommendation confidence without overwriting or confounding underlying data facts.
+
+---
+
+## 📊 Telemetry & Observability: Actual vs. Simulated
+
+The system provides an administrator observability panel separating real runtime metrics from economic projections:
+- **Actual Telemetry**:
+  - Exact deterministic engine execution latency (measured via monotonic clock).
+  - SQLite database record count and execution run query times.
+  - Active execution run IDs and parameter state.
+- **Simulated Telemetry**:
+  - Hypothetical LLM token consumption model (8,500 input tokens, 1,200 output tokens per run).
+  - Enterprise cost projections ($0.005 / 1k input tokens, $0.015 / 1k output tokens) to illustrate production unit economics if LLM narrative expansion were enabled.
+
+---
+
+## 🧪 Verification & Standalone Scripts
+
+### Running Automated Test Suite
+```bash
+# Run full suite (214 tests)
+.venv\Scripts\python.exe -m pytest tests/ -q
+```
+
+### Running Data Audit & Validation Scripts
+When invoking standalone scripts from the command line, ensure `PYTHONPATH` includes the workspace root so modules in `src/` are properly resolved:
+
+```powershell
+# Windows PowerShell:
+$env:PYTHONPATH="."
+.venv\Scripts\python.exe scripts/validate_data.py
+```
+
+```bash
+# Linux / macOS:
+export PYTHONPATH=.
+python scripts/validate_data.py
+```

@@ -327,3 +327,107 @@ def get_feedback_by_run(run_id, db_path="data/storyproof_audit.db"):
     except Exception as e:
         print(f"Warning: Failed to fetch feedback: {e}")
         return []
+
+def get_action_governance_signal(action_id=None, db_path="data/storyproof_audit.db"):
+    """
+    Computes a deterministic human-feedback governance signal from accumulated analyst reviews for an action_id.
+
+    Returns a dictionary containing:
+      - action_id (str): Evaluated action identifier
+      - total_reviews (int): Total recorded reviews for this action_id
+      - approved_count (int): Total APPROVED reviews
+      - rejected_count (int): Total REJECTED reviews
+      - flagged_count (int): Total FLAGGED reviews
+      - approval_rate (float or None): approved_count / total_reviews
+      - rejection_rate (float or None): rejected_count / total_reviews
+      - flagged_rate (float or None): flagged_count / total_reviews
+      - status (str): 'NO_PRIOR_FEEDBACK' | 'HIGH_HISTORICAL_ACCEPTANCE' | 'FREQUENTLY_REJECTED' | 'FREQUENTLY_FLAGGED' | 'MIXED_FEEDBACK'
+      - label (str): Human-readable governance summary
+      - acceptance_score (float or None): 0.0 to 1.0 acceptance metric (None if no reviews)
+      - recent_comments (list of dicts): Up to 3 recent non-empty comments
+    """
+    default_signal = {
+        "action_id": action_id,
+        "total_reviews": 0,
+        "approved_count": 0,
+        "rejected_count": 0,
+        "flagged_count": 0,
+        "approval_rate": None,
+        "rejection_rate": None,
+        "flagged_rate": None,
+        "status": "NO_PRIOR_FEEDBACK",
+        "label": "No prior human feedback recorded for this action.",
+        "acceptance_score": None,
+        "recent_comments": []
+    }
+
+    if not action_id or not os.path.exists(db_path):
+        return default_signal
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT status, comments, analyst_name, timestamp FROM analyst_feedback WHERE action_id = ? ORDER BY timestamp DESC;",
+            (action_id,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return default_signal
+
+        total_reviews = len(rows)
+        approved_count = sum(1 for r in rows if r["status"] == "APPROVED")
+        rejected_count = sum(1 for r in rows if r["status"] == "REJECTED")
+        flagged_count = sum(1 for r in rows if r["status"] == "FLAGGED")
+
+        approval_rate = approved_count / total_reviews
+        rejection_rate = rejected_count / total_reviews
+        flagged_rate = flagged_count / total_reviews
+
+        if approval_rate >= 0.70:
+            status = "HIGH_HISTORICAL_ACCEPTANCE"
+            label = f"High Analyst Acceptance ({approved_count}/{total_reviews} approved, {approval_rate:.0%})"
+        elif rejection_rate >= 0.50:
+            status = "FREQUENTLY_REJECTED"
+            label = f"Frequently Rejected by Analysts ({rejected_count}/{total_reviews} rejected, {rejection_rate:.0%})"
+        elif flagged_rate >= 0.40:
+            status = "FREQUENTLY_FLAGGED"
+            label = f"Frequently Flagged for Review ({flagged_count}/{total_reviews} flagged, {flagged_rate:.0%})"
+        else:
+            status = "MIXED_FEEDBACK"
+            label = f"Mixed Analyst Feedback ({approved_count} approved, {rejected_count} rejected, {flagged_count} flagged)"
+
+        recent_comments = []
+        for r in rows:
+            comm = r["comments"]
+            if comm and comm.strip():
+                recent_comments.append({
+                    "analyst": r["analyst_name"],
+                    "status": r["status"],
+                    "comment": comm.strip(),
+                    "timestamp": r["timestamp"]
+                })
+                if len(recent_comments) >= 3:
+                    break
+
+        return {
+            "action_id": action_id,
+            "total_reviews": total_reviews,
+            "approved_count": approved_count,
+            "rejected_count": rejected_count,
+            "flagged_count": flagged_count,
+            "approval_rate": round(approval_rate, 4),
+            "rejection_rate": round(rejection_rate, 4),
+            "flagged_rate": round(flagged_rate, 4),
+            "status": status,
+            "label": label,
+            "acceptance_score": round(approval_rate, 4),
+            "recent_comments": recent_comments
+        }
+    except Exception as e:
+        print(f"Warning: Failed to calculate governance signal: {e}")
+        return default_signal
