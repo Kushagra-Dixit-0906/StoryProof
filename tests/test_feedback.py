@@ -576,6 +576,8 @@ def test_governance_signal_no_feedback(tmp_path):
     assert signal["approval_rate"] is None
     assert signal["acceptance_score"] is None
     assert signal["status"] == "NO_PRIOR_FEEDBACK"
+    assert signal["governance_decision"] == "STANDARD_REVIEW"
+    assert signal["review_required"] is False
     assert "No prior human feedback" in signal["label"]
     assert signal["recent_comments"] == []
 
@@ -610,6 +612,8 @@ def test_governance_signal_approved_feedback(tmp_path):
     assert s1["approval_rate"] == 1.0
     assert s1["acceptance_score"] == 1.0
     assert s1["status"] == "HIGH_HISTORICAL_ACCEPTANCE"
+    assert s1["governance_decision"] == "HISTORICAL_SUPPORT"
+    assert s1["review_required"] is False
     assert "High Analyst Acceptance" in s1["label"]
     assert len(s1["recent_comments"]) == 3
 
@@ -634,6 +638,8 @@ def test_governance_signal_rejected_feedback(tmp_path):
     assert signal["approval_rate"] == 0.25
     assert signal["rejection_rate"] == 0.75
     assert signal["status"] == "FREQUENTLY_REJECTED"
+    assert signal["governance_decision"] == "ESCALATED_REVIEW"
+    assert signal["review_required"] is True
     assert "Frequently Rejected by Analysts" in signal["label"]
 
 def test_governance_signal_flagged_feedback(tmp_path):
@@ -657,6 +663,8 @@ def test_governance_signal_flagged_feedback(tmp_path):
     # Flagged does not count as approval: approval_rate is 1/3 (0.3333), not 3/3
     assert pytest.approx(signal["approval_rate"], 0.01) == 0.3333
     assert signal["status"] == "FREQUENTLY_FLAGGED"
+    assert signal["governance_decision"] == "HEIGHTENED_REVIEW"
+    assert signal["review_required"] is True
     assert "Frequently Flagged for Review" in signal["label"]
 
 def test_governance_signal_action_isolation(tmp_path):
@@ -732,3 +740,114 @@ def test_governance_signal_preserves_evidence_confidence(tmp_path):
     assert gov_signal["total_reviews"] == 3
     assert gov_signal["rejection_rate"] == 1.0
 
+def test_governance_guidance_all_states(tmp_path):
+    """7. Deterministic governance guidance is generated for all 5 lifecycle states."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+    syn = get_mock_synthesis()
+    views = make_test_views_with_actions(["ACT_1", "ACT_2", "ACT_3", "ACT_4"])
+    run_id = log_execution_run(syn, views, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+
+    # 1. NO_PRIOR_FEEDBACK
+    s_none = get_action_governance_signal("UNSEEN_ACTION", db_path=db_path)
+    assert s_none["status"] == "NO_PRIOR_FEEDBACK"
+    assert s_none["governance_decision"] == "STANDARD_REVIEW"
+    assert s_none["review_required"] is False
+    assert "guidance" in s_none and isinstance(s_none["guidance"], str)
+    assert "Standard operational review applies" in s_none["guidance"]
+
+    # 2. HIGH_HISTORICAL_ACCEPTANCE (>= 70% approved)
+    for i in range(4):
+        log_analyst_feedback(run_id, "ACT_1", "APPROVED", f"Approved {i}", f"Analyst_{i}", db_path=db_path)
+    s_appr = get_action_governance_signal("ACT_1", db_path=db_path)
+    assert s_appr["status"] == "HIGH_HISTORICAL_ACCEPTANCE"
+    assert s_appr["governance_decision"] == "HISTORICAL_SUPPORT"
+    assert s_appr["review_required"] is False
+    assert "consensus" in s_appr["guidance"].lower() or "approved" in s_appr["guidance"].lower()
+
+    # 3. FREQUENTLY_REJECTED (>= 50% rejected)
+    for i in range(3):
+        log_analyst_feedback(run_id, "ACT_2", "REJECTED", f"Rejected {i}", f"Analyst_{i}", db_path=db_path)
+    s_rej = get_action_governance_signal("ACT_2", db_path=db_path)
+    assert s_rej["status"] == "FREQUENTLY_REJECTED"
+    assert s_rej["governance_decision"] == "ESCALATED_REVIEW"
+    assert s_rej["review_required"] is True
+    assert "rejected" in s_rej["guidance"].lower()
+
+    # 4. FREQUENTLY_FLAGGED (>= 40% flagged)
+    for i in range(2):
+        log_analyst_feedback(run_id, "ACT_3", "FLAGGED", f"Flagged {i}", f"Analyst_{i}", db_path=db_path)
+    log_analyst_feedback(run_id, "ACT_3", "APPROVED", "Approved 1", "Analyst_X", db_path=db_path)
+    s_flag = get_action_governance_signal("ACT_3", db_path=db_path)
+    assert s_flag["status"] == "FREQUENTLY_FLAGGED"
+    assert s_flag["governance_decision"] == "HEIGHTENED_REVIEW"
+    assert s_flag["review_required"] is True
+    assert "review recommended" in s_flag["guidance"].lower()
+
+    # 5. MIXED_FEEDBACK (dispersed reviews)
+    log_analyst_feedback(run_id, "ACT_4", "APPROVED", "Approved", "Analyst_A", db_path=db_path)
+    log_analyst_feedback(run_id, "ACT_4", "REJECTED", "Rejected", "Analyst_B", db_path=db_path)
+    log_analyst_feedback(run_id, "ACT_4", "FLAGGED", "Flagged", "Analyst_C", db_path=db_path)
+    s_mixed = get_action_governance_signal("ACT_4", db_path=db_path)
+    assert s_mixed["status"] == "MIXED_FEEDBACK"
+    assert s_mixed["governance_decision"] == "CONTEXTUAL_REVIEW"
+    assert s_mixed["review_required"] is True
+    assert "divided" in s_mixed["guidance"].lower()
+
+def test_governance_recent_comments_max_and_ordering(tmp_path):
+    """8. Recent comments returns up to 3 non-empty comments ordered reverse chronologically."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+    syn = get_mock_synthesis()
+    views = make_test_views_with_actions(["ACT_COMMENTS"])
+    run_id = log_execution_run(syn, views, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+
+    # Log 5 feedback items with comments
+    for i in range(5):
+        log_analyst_feedback(
+            run_id=run_id,
+            action_id="ACT_COMMENTS",
+            status="APPROVED" if i % 2 == 0 else "FLAGGED",
+            comments=f"Comment number {i}",
+            analyst_name=f"Analyst_{i}",
+            db_path=db_path
+        )
+
+    signal = get_action_governance_signal("ACT_COMMENTS", db_path=db_path)
+    assert signal["total_reviews"] == 5
+    assert len(signal["recent_comments"]) == 3
+    # Check fields present in comments
+    for comm in signal["recent_comments"]:
+        assert "analyst" in comm
+        assert "status" in comm
+        assert "comment" in comm
+        assert "timestamp" in comm
+        assert len(comm["comment"]) > 0
+
+def test_governance_does_not_suppress_or_mutate_actions(tmp_path):
+    """9. Governance signals do not mutate or suppress recommended action objects."""
+    db_path = str(tmp_path / "test_audit.db")
+    initialize_database(db_path)
+    syn = get_mock_synthesis()
+    views = make_test_views_with_actions(["ACT_CX_1", "ACT_OPS_1"])
+    run_id = log_execution_run(syn, views, db_path, DEFAULT_BASELINE, DEFAULT_COMPARISON)
+
+    # Log 10 rejections for ACT_CX_1
+    for i in range(10):
+        log_analyst_feedback(run_id, "ACT_CX_1", "REJECTED", f"Disapproved {i}", f"Analyst_{i}", db_path=db_path)
+
+    # Re-fetch views and actions
+    cx_actions = views["personas"]["CX_MANAGER"]["recommended_actions"]
+    assert len(cx_actions) == 1
+    action = cx_actions[0]
+    assert action["id"] == "ACT_CX_1"
+    assert action["priority"] == "HIGH"
+
+    # Governance check
+    sig = get_action_governance_signal("ACT_CX_1", db_path=db_path)
+    assert sig["status"] == "FREQUENTLY_REJECTED"
+    assert sig["total_reviews"] == 10
+
+    # Ensure action object properties are unchanged
+    assert action["priority"] == "HIGH"
+    assert action["id"] == "ACT_CX_1"

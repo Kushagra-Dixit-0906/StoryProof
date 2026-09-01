@@ -14,7 +14,10 @@ from app import (
     check_role_permission,
     calculate_projected_llm_cost,
     run_intelligence_pipeline,
-    resolve_execution_run_id
+    resolve_execution_run_id,
+    get_accessible_kpis,
+    check_kpi_access,
+    load_kpi_time_series
 )
 
 # Import feedback functions
@@ -561,3 +564,138 @@ def test_milestone_5_4_observability(tmp_path):
     # Verify Parameter Restoration elements exist
     assert "st.session_state[\"b_start_input\"] = " in app_code
     assert "st.rerun()" in app_code
+
+# ------------------------------------------------------------------------------
+# KPI-LEVEL ROLE / ENTITLEMENT TESTS
+# ------------------------------------------------------------------------------
+
+def test_kpi_entitlements_by_role():
+    """
+    Verifies that get_accessible_kpis() accurately enforces the semantic contract
+    from config/kpi_definitions.yaml for each role:
+      - Administrator: all 6 KPIs
+      - CX Manager: AHT, FCR, CSAT, Repeat_Contact_Rate, Retention_Rate (excludes AI_Resolution_Rate)
+      - Operations Manager: AHT, FCR, CSAT, Repeat_Contact_Rate, AI_Resolution_Rate (excludes Retention_Rate)
+      - Guest: common intersection (AHT, FCR, CSAT, Repeat_Contact_Rate)
+    """
+    kpi_defs = load_kpi_definitions("config/kpi_definitions.yaml")
+    assert kpi_defs is not None
+    assert len(kpi_defs) == 6
+
+    # 1. Administrator -> All 6 KPIs
+    admin_kpis = get_accessible_kpis("Administrator", kpi_defs)
+    assert len(admin_kpis) == 6
+    assert set(admin_kpis) == {"AHT", "FCR", "CSAT", "Repeat_Contact_Rate", "Retention_Rate", "AI_Resolution_Rate"}
+
+    # 2. CX Manager -> 5 KPIs (includes Retention_Rate, excludes AI_Resolution_Rate)
+    cx_kpis = get_accessible_kpis("CX Manager", kpi_defs)
+    assert len(cx_kpis) == 5
+    assert "Retention_Rate" in cx_kpis
+    assert "AI_Resolution_Rate" not in cx_kpis
+    assert set(cx_kpis) == {"AHT", "FCR", "CSAT", "Repeat_Contact_Rate", "Retention_Rate"}
+
+    # 3. Operations Manager -> 5 KPIs (includes AI_Resolution_Rate, excludes Retention_Rate)
+    ops_kpis = get_accessible_kpis("Operations Manager", kpi_defs)
+    assert len(ops_kpis) == 5
+    assert "AI_Resolution_Rate" in ops_kpis
+    assert "Retention_Rate" not in ops_kpis
+    assert set(ops_kpis) == {"AHT", "FCR", "CSAT", "Repeat_Contact_Rate", "AI_Resolution_Rate"}
+
+    # 4. Guest -> 4 common KPIs (intersection of CX and Ops)
+    guest_kpis = get_accessible_kpis("Guest", kpi_defs)
+    assert len(guest_kpis) == 4
+    assert "Retention_Rate" not in guest_kpis
+    assert "AI_Resolution_Rate" not in guest_kpis
+    assert set(guest_kpis) == {"AHT", "FCR", "CSAT", "Repeat_Contact_Rate"}
+
+    # 5. Invalid/Unknown inputs
+    assert get_accessible_kpis("Unknown Role", kpi_defs) == []
+    assert get_accessible_kpis("CX Manager", None) == []
+    assert get_accessible_kpis("CX Manager", {}) == []
+
+def test_check_kpi_access_enforcement():
+    """
+    Verifies that check_kpi_access() performs reusable backend permission checks:
+      - CX Manager cannot access AI_Resolution_Rate
+      - Operations Manager cannot access Retention_Rate
+      - Guest cannot access Retention_Rate or AI_Resolution_Rate
+      - Administrator can access all KPIs
+    """
+    kpi_defs = load_kpi_definitions("config/kpi_definitions.yaml")
+
+    # CX Manager checks
+    assert check_kpi_access("CX Manager", "Retention_Rate", kpi_defs) is True
+    assert check_kpi_access("CX Manager", "CSAT", kpi_defs) is True
+    assert check_kpi_access("CX Manager", "AHT", kpi_defs) is True
+    assert check_kpi_access("CX Manager", "AI_Resolution_Rate", kpi_defs) is False
+
+    # Operations Manager checks
+    assert check_kpi_access("Operations Manager", "AI_Resolution_Rate", kpi_defs) is True
+    assert check_kpi_access("Operations Manager", "AHT", kpi_defs) is True
+    assert check_kpi_access("Operations Manager", "FCR", kpi_defs) is True
+    assert check_kpi_access("Operations Manager", "Retention_Rate", kpi_defs) is False
+
+    # Guest checks
+    assert check_kpi_access("Guest", "AHT", kpi_defs) is True
+    assert check_kpi_access("Guest", "CSAT", kpi_defs) is True
+    assert check_kpi_access("Guest", "Retention_Rate", kpi_defs) is False
+    assert check_kpi_access("Guest", "AI_Resolution_Rate", kpi_defs) is False
+
+    # Administrator checks
+    for k in ["AHT", "FCR", "CSAT", "Repeat_Contact_Rate", "Retention_Rate", "AI_Resolution_Rate"]:
+        assert check_kpi_access("Administrator", k, kpi_defs) is True
+
+    # Edge cases
+    assert check_kpi_access("CX Manager", "NON_EXISTENT_KPI", kpi_defs) is False
+    assert check_kpi_access("CX Manager", "", kpi_defs) is False
+    assert check_kpi_access("CX Manager", "AHT", None) is False
+
+def test_load_kpi_time_series_role_rejection():
+    """
+    Verifies that load_kpi_time_series() rejects unauthorized KPI access at the backend level
+    when a role parameter is passed, rather than merely relying on UI hiding.
+    """
+    kpi_defs = load_kpi_definitions("config/kpi_definitions.yaml")
+
+    # 1. Unauthorized requests must return None
+    assert load_kpi_time_series("AI_Resolution_Rate", kpi_defs, "data", role="CX Manager") is None
+    assert load_kpi_time_series("Retention_Rate", kpi_defs, "data", role="Operations Manager") is None
+    assert load_kpi_time_series("Retention_Rate", kpi_defs, "data", role="Guest") is None
+    assert load_kpi_time_series("AI_Resolution_Rate", kpi_defs, "data", role="Guest") is None
+
+    # 2. Authorized requests must succeed and return non-empty DataFrames
+    cx_retention = load_kpi_time_series("Retention_Rate", kpi_defs, "data", role="CX Manager")
+    assert cx_retention is not None
+    assert not cx_retention.empty
+    assert "date" in cx_retention.columns
+    assert "value" in cx_retention.columns
+
+    ops_ai = load_kpi_time_series("AI_Resolution_Rate", kpi_defs, "data", role="Operations Manager")
+    assert ops_ai is not None
+    assert not ops_ai.empty
+
+    admin_ai = load_kpi_time_series("AI_Resolution_Rate", kpi_defs, "data", role="Administrator")
+    assert admin_ai is not None
+    assert not admin_ai.empty
+
+    admin_retention = load_kpi_time_series("Retention_Rate", kpi_defs, "data", role="Administrator")
+    assert admin_retention is not None
+    assert not admin_retention.empty
+
+    # 3. Omitting role preserves backward compatibility
+    unrestricted = load_kpi_time_series("AHT", kpi_defs, "data")
+    assert unrestricted is not None
+    assert not unrestricted.empty
+
+def test_role_aware_dashboard_computation_flow():
+    """
+    Verifies that the role-aware dashboard computation flow calculates ONLY
+    entitled KPIs for the given role, preventing unauthorized KPI metrics from
+    being computed or stored in kpi_stats.
+    """
+    with open("app.py", "r", encoding="utf-8") as f:
+        app_code = f.read()
+
+    # Verify that the calculation loop iterates over entitled_kpis, not all_kpis
+    assert "for k in entitled_kpis:" in app_code
+    assert "for k in all_kpis:" not in app_code

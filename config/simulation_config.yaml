@@ -39,7 +39,7 @@ timeline_and_events:
       - phase: "Pilot"
         start_date: "2026-03-01"
         end_date: "2026-03-31"
-        target_adoption_pct: 1.0 # 1% trial
+        target_adoption_pct: 0.01 # 1% pilot trial (decimal fraction, consistent with generator)
       - phase: "Phase 1"
         start_date: "2026-04-01"
         end_date: "2026-04-30"

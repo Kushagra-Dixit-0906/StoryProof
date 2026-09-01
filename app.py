@@ -115,12 +115,16 @@ def load_kpi_definitions(config_path="config/kpi_definitions.yaml"):
     except (OSError, yaml.YAMLError, ValueError, TypeError, KeyError):
         return None
 
-def load_kpi_time_series(kpi_name, kpi_definitions, data_dir):
+def load_kpi_time_series(kpi_name, kpi_definitions, data_dir, role=None):
     """
     Loads raw CSV data for a KPI and formats it to ['date', 'value'] columns,
-    following the authoritative configuration mapping. Returns None on missing/malformed inputs.
+    following the authoritative configuration mapping. Returns None on missing/malformed inputs
+    or if the requesting role lacks entitlement access to the KPI.
     Does not mutate input arguments.
     """
+    if role is not None and not check_kpi_access(role, kpi_name, kpi_definitions):
+        return None
+
     if not kpi_definitions or not data_dir or not isinstance(kpi_definitions, dict):
         return None
 
@@ -203,7 +207,9 @@ def load_kpi_time_series(kpi_name, kpi_definitions, data_dir):
     try:
         res_df = df_copy[['date_parsed', 'value']].copy()
         res_df.columns = ['date', 'value']
-        res_df = res_df.dropna().sort_values('date')
+        res_df = res_df.dropna()
+        # Aggregate intra-day slices by date so each unique date has a consolidated mean value
+        res_df = res_df.groupby('date', as_index=False)['value'].mean().sort_values('date')
         return res_df
     except (KeyError, ValueError, TypeError):
         return None
@@ -211,12 +217,33 @@ def load_kpi_time_series(kpi_name, kpi_definitions, data_dir):
 def build_trend_chart(kpi_name, kpi_df, baseline_period, comparison_period, show_shading=True):
     """
     Builds a Plotly trend chart for the KPI.
-    Shades baseline and comparison ranges in gray if show_shading is True.
+    Aggregates dense daily series (e.g. AHT, FCR, Repeat Contact) to weekly averages for visual clarity,
+    while preserving natural daily grain for sparse series (AI Resolution Rate) and weekly/monthly series.
+    Shades baseline and comparison ranges if show_shading is True.
     """
     if kpi_df is None or kpi_df.empty:
         return None
 
-    fig = px.line(kpi_df, x="date", y="value", title=f"{kpi_name} Over Time")
+    plot_df = kpi_df.copy()
+    plot_df = plot_df.groupby('date', as_index=False)['value'].mean().sort_values('date')
+
+    # Weekly visual aggregation for long daily series (>30 days) to prevent spaghetti clutter
+    is_weekly_aggregated = False
+    if len(plot_df) > 30:
+        try:
+            plot_df_indexed = plot_df.set_index('date')
+            weekly_df = plot_df_indexed.resample('W-MON').mean().dropna().reset_index()
+            if not weekly_df.empty and len(weekly_df) >= 4:
+                plot_df = weekly_df
+                is_weekly_aggregated = True
+        except Exception:
+            pass
+
+    chart_title = f"{kpi_name} Over Time"
+    if is_weekly_aggregated:
+        chart_title += " (Weekly Visual Average)"
+
+    fig = px.line(plot_df, x="date", y="value", title=chart_title, markers=True)
 
     if show_shading:
         # Baseline shading
@@ -263,6 +290,60 @@ def check_role_permission(role, permission_type):
         return role in ["Administrator"]
     return False
 
+def get_accessible_kpis(role, kpi_definitions):
+    """
+    Returns the list of KPI names accessible to the given role,
+    based on the allowed_roles_personas field in kpi_definitions.yaml.
+
+    Role mapping (YAML uses Manager-style names):
+      - 'Administrator' -> full access to all KPIs
+      - 'CX Manager' -> KPIs with 'CX Manager' in allowed_roles_personas
+      - 'Operations Manager' -> KPIs with 'Operations Manager' in allowed_roles_personas
+      - 'Guest' -> intersection (KPIs accessible to BOTH CX Manager and Operations Manager)
+
+    Returns:
+      List of KPI name strings the role is entitled to access.
+    """
+    if not kpi_definitions or not isinstance(kpi_definitions, dict):
+        return []
+
+    all_kpis = list(kpi_definitions.keys())
+
+    if role == "Administrator":
+        return all_kpis
+
+    accessible = []
+    for kpi_name, kpi_def in kpi_definitions.items():
+        allowed = kpi_def.get("allowed_roles_personas", [])
+        if not isinstance(allowed, list):
+            continue
+
+        if role == "CX Manager":
+            if "CX Manager" in allowed:
+                accessible.append(kpi_name)
+        elif role == "Operations Manager":
+            if "Operations Manager" in allowed:
+                accessible.append(kpi_name)
+        elif role == "Guest":
+            # Guest sees only KPIs accessible to BOTH manager roles (common set)
+            if "CX Manager" in allowed and "Operations Manager" in allowed:
+                accessible.append(kpi_name)
+
+    return accessible
+
+def check_kpi_access(role, kpi_name, kpi_definitions):
+    """
+    Validates whether a specific role is authorized to access a given KPI,
+    based on the allowed_roles_personas field in kpi_definitions.yaml.
+
+    Returns:
+      True if role is authorized to access kpi_name, False otherwise.
+    """
+    if not kpi_definitions or not isinstance(kpi_definitions, dict) or not kpi_name:
+        return False
+    accessible_kpis = get_accessible_kpis(role, kpi_definitions)
+    return kpi_name in accessible_kpis
+
 def get_evidence_provenance_badge(refs):
     """
     Derives transparent provenance, freshness, and analytical method metadata for a list of references.
@@ -273,25 +354,29 @@ def get_evidence_provenance_badge(refs):
     details = []
     for ref in refs:
         if ref.startswith("support_transcripts"):
-            details.append(f"Ticket Transcript `{ref}` (Event Date | Raw Chat Ticket | Keyword Relevance Scoring)")
+            details.append(f"**Ticket Transcript** `{ref}` | Source: `data/unstructured/support_transcripts.txt` | Grain: Event Date | Method: Keyword Relevance Scoring")
         elif ref.startswith("customer_feedback"):
-            details.append(f"CSAT Review `{ref}` (Event Date | Qualitative Feedback | Sentiment Categorization)")
+            details.append(f"**CSAT Review** `{ref}` | Source: `data/unstructured/customer_feedback.txt` | Grain: Event Date | Method: Qualitative Feedback Retrieval")
         elif ref.startswith("rollout_report"):
-            details.append(f"Project Memo `{ref}` (Doc Date: 2026-06-30 | Operations Status Report | Document Parsing)")
+            details.append(f"**Project Memo** `{ref}` | Source: `data/unstructured/rollout_report.txt` | Doc Date: 2026-06-30 | Method: Status Report Parsing")
         elif "_materiality" in ref:
             kpi = ref.replace("_materiality", "")
             if kpi in ["AHT", "FCR", "Repeat_Contact_Rate"]:
-                details.append(f"`{ref}` (Source: support_daily.csv | Cadence: Daily | Method: Z-Score Materiality Gate)")
+                details.append(f"**Structured Metric** `{ref}` | Source: `data/support_daily.csv` | Cadence: Daily | History: Sufficient (181d >= 30d req) | Method: Z-Score Materiality Gate")
             elif kpi == "CSAT":
-                details.append(f"`{ref}` (Source: cx_weekly.csv | Cadence: Weekly | Method: Absolute Threshold Gate)")
+                details.append(f"**Structured Metric** `{ref}` | Source: `data/cx_weekly.csv` | Cadence: Weekly | History: Sufficient (175d >= 90d req) | Method: Absolute Threshold Gate")
             elif kpi == "Retention_Rate":
-                details.append(f"`{ref}` (Source: crm_monthly.csv | Cadence: Monthly | Method: Trailing Baseline Gate)")
+                details.append(f"**Structured Metric** `{ref}` | Source: `data/crm_monthly.csv` | Cadence: Monthly | History: Sufficient (181d >= 180d req) | Method: Trailing Baseline Gate")
             elif kpi == "AI_Resolution_Rate":
-                details.append(f"`{ref}` (Source: ai_resolution_rate.csv | Cadence: Daily | Method: History Gate [21/60d])")
+                details.append(f"**Structured Metric** `{ref}` | Source: `data/ai_resolution_rate.csv` | Cadence: Daily | History: Sparse (21d / 60d req) | Method: History Sufficiency Gate")
+            else:
+                details.append(f"**Structured Metric** `{ref}` | Source: `config/kpi_definitions.yaml` | Cadence: Configured | Method: Baseline Materiality Gate")
         elif "_driver" in ref:
-            details.append(f"`{ref}` (Method: Shapley Mix-Rate Variance Decomposition | Zero Error Reconciliation)")
+            details.append(f"**Variance Attribution** `{ref}` | Source: Segment Dimension Split | Method: Shapley Mix-Rate Decomposition (Zero-Error Reconciled)")
         elif "_hypothesis" in ref:
-            details.append(f"`{ref}` (Method: Multi-Hypothesis Association & Confounder Control Concentration)")
+            details.append(f"**Hypothesis Evidence** `{ref}` | Source: Multi-Source Operational Logs | Method: Differential Signal & Confounder Control Concentration")
+        else:
+            details.append(f"**Evidence Reference** `{ref}` | Source: System Evidence Register | Metadata: Not available")
     return details
 
 
@@ -368,10 +453,23 @@ def resolve_execution_run_id(
 # STREAMLIT UI RENDER LAYER
 # ------------------------------------------------------------------------------
 
+def format_classification_badge(cls):
+    """
+    Returns visual badge for statement classification.
+    """
+    badge_map = {
+        "FACT": "🟢 FACT",
+        "ASSOCIATION": "🔵 ASSOCIATION",
+        "HYPOTHESIS": "🟡 HYPOTHESIS",
+        "CONTEXT": "🟣 CONTEXT",
+        "LIMITATION": "🔴 LIMITATION"
+    }
+    return badge_map.get(cls, f"[{cls}]")
+
 def main():
     st.title("StoryProof")
     st.subheader("Evidence-first KPI Intelligence")
-    st.caption("Prototype v0.1")
+    st.caption("Evidence-backed decision support for KPI investigation and operational action")
 
     # 1. Sidebar Configurations
     st.sidebar.header("Configuration")
@@ -449,65 +547,73 @@ def main():
         st.session_state["run_key"] = new_key
 
     # 2. Authoritative KPI Calculations (Scorecards data)
-    kpis = ["AHT", "FCR", "CSAT", "Repeat_Contact_Rate", "Retention_Rate", "AI_Resolution_Rate"]
+    all_kpis = ["AHT", "FCR", "CSAT", "Repeat_Contact_Rate", "Retention_Rate", "AI_Resolution_Rate"]
+    entitled_kpis = get_accessible_kpis(user_role, kpi_definitions)
     kpi_stats = {}
 
-    for k in kpis:
+    # Strict Entitlement Execution: Calculate/retrieve ONLY entitled KPIs for the active role
+    for k in entitled_kpis:
         try:
             res = analyze_kpi_change(k, kpi_definitions, data_dir, baseline_period, comparison_period)
             kpi_stats[k] = res
         except Exception as e:
             kpi_stats[k] = {"status": "ERROR", "reason": str(e)}
 
-    # Render Scorecard Grid
-    cols = st.columns(3)
-    for idx, k in enumerate(kpis[:3]):
-        stats = kpi_stats.get(k, {})
-        with cols[idx]:
-            if stats.get("status") == "ERROR" or "baseline" not in stats:
-                st.metric(k, "N/A", delta="No data")
-            else:
-                val_base = stats["baseline"]["value"]
-                val_comp = stats["comparison"]["value"]
-                if val_comp is None or val_base is None:
+    # Render Scorecard Grid (filtered by role entitlement)
+    scorecard_kpis = [k for k in all_kpis if k in entitled_kpis]
+    if not scorecard_kpis:
+        st.info("No KPIs are accessible for the current role.")
+    else:
+        # First row
+        row1 = scorecard_kpis[:3]
+        cols = st.columns(len(row1))
+        for idx, k in enumerate(row1):
+            stats = kpi_stats.get(k, {})
+            with cols[idx]:
+                if stats.get("status") == "ERROR" or "baseline" not in stats:
                     st.metric(k, "N/A", delta="No data")
                 else:
-                    # Unit formatting
-                    unit = kpi_definitions[k].get("display_unit", "")
-                    if unit == "percentage":
-                        val_show = f"{val_comp * 100:.1f}%" if k != "CSAT" else f"{val_comp:.1f}%"
-                        diff = val_comp - val_base
-                        diff_show = f"{diff * 100:+.1f}%" if k != "CSAT" else f"{diff:+.1f}%"
+                    val_base = stats["baseline"]["value"]
+                    val_comp = stats["comparison"]["value"]
+                    if val_comp is None or val_base is None:
+                        st.metric(k, "N/A", delta="No data")
                     else:
-                        val_show = f"{val_comp:.2f}"
-                        diff = val_comp - val_base
-                        diff_show = f"{diff:+.2f}"
+                        unit = kpi_definitions[k].get("display_unit", "")
+                        if unit == "percentage":
+                            val_show = f"{val_comp * 100:.1f}%" if k != "CSAT" else f"{val_comp:.1f}%"
+                            diff = val_comp - val_base
+                            diff_show = f"{diff * 100:+.1f}%" if k != "CSAT" else f"{diff:+.1f}%"
+                        else:
+                            val_show = f"{val_comp:.2f}"
+                            diff = val_comp - val_base
+                            diff_show = f"{diff:+.2f}"
+                        st.metric(k, val_show, delta=diff_show)
 
-                    st.metric(k, val_show, delta=diff_show)
-
-    cols2 = st.columns(3)
-    for idx, k in enumerate(kpis[3:]):
-        stats = kpi_stats.get(k, {})
-        with cols2[idx]:
-            if stats.get("status") == "ERROR" or "baseline" not in stats:
-                st.metric(k, "N/A", delta="No data")
-            else:
-                val_base = stats["baseline"]["value"]
-                val_comp = stats["comparison"]["value"]
-                if val_comp is None or val_base is None:
-                    st.metric(k, "N/A", delta="No data")
-                else:
-                    unit = kpi_definitions[k].get("display_unit", "")
-                    if unit == "percentage":
-                        val_show = f"{val_comp * 100:.1f}%"
-                        diff = val_comp - val_base
-                        diff_show = f"{diff * 100:+.1f}%"
+        # Second row (if more than 3 entitled KPIs)
+        row2 = scorecard_kpis[3:]
+        if row2:
+            cols2 = st.columns(len(row2))
+            for idx, k in enumerate(row2):
+                stats = kpi_stats.get(k, {})
+                with cols2[idx]:
+                    if stats.get("status") == "ERROR" or "baseline" not in stats:
+                        st.metric(k, "N/A", delta="No data")
                     else:
-                        val_show = f"{val_comp:.2f}"
-                        diff = val_comp - val_base
-                        diff_show = f"{diff:+.2f}"
-
-                    st.metric(k, val_show, delta=diff_show)
+                        val_base = stats["baseline"]["value"]
+                        val_comp = stats["comparison"]["value"]
+                        if val_comp is None or val_base is None:
+                            st.metric(k, "N/A", delta="No data")
+                        else:
+                            unit = kpi_definitions[k].get("display_unit", "")
+                            if unit == "percentage":
+                                val_show = f"{val_comp * 100:.1f}%"
+                                diff = val_comp - val_base
+                                diff_show = f"{diff * 100:+.1f}%"
+                            else:
+                                val_show = f"{val_comp:.2f}"
+                                diff = val_comp - val_base
+                                diff_show = f"{diff:+.2f}"
+                            st.metric(k, val_show, delta=diff_show)
 
     # 3. Dual-View Presentation
     st.write("---")
@@ -528,8 +634,9 @@ def main():
 
         # Simple Plotly trend charts
         st.write("#### Trend Correlations")
-        selected_kpi_bi = st.selectbox("Select KPI to view (Traditional BI)", kpis, key="bi_kpi")
-        ts_df_bi = load_kpi_time_series(selected_kpi_bi, kpi_definitions, data_dir)
+        bi_kpis = [k for k in all_kpis if k in entitled_kpis]
+        selected_kpi_bi = st.selectbox("Explore KPI trend (Traditional BI)", bi_kpis if bi_kpis else all_kpis, key="bi_kpi")
+        ts_df_bi = load_kpi_time_series(selected_kpi_bi, kpi_definitions, data_dir, role=user_role)
 
         if ts_df_bi is not None and not ts_df_bi.empty:
             # Unshaded simple chart
@@ -542,13 +649,64 @@ def main():
     with tab_proof:
         st.subheader("StoryProof Verification View")
 
+        # Core StoryProof Analytical Flow Banner
+        st.markdown(
+            "**Analytical Pipeline**: `1. Traditional BI` ➔ `2. Observed KPI Tension` ➔ "
+            "`3. Evidence & Hypotheses` ➔ `4. Decision Readiness` ➔ `5. Recommended Action`"
+        )
+
         # Exact Mandatory Disclaimer
         st.info("The available evidence does not establish causality; observed changes represent associations and candidate explanations only.")
 
+        # KPI Entitlement Notice
+        st.caption(f"🔒 **KPI Entitlement**: {user_role} has access to {len(entitled_kpis)} of {len(all_kpis)} KPIs based on the semantic contract.")
+
         # Shaded trend chart
         st.write("#### Shaded Trend & Period Distinction")
-        selected_kpi_proof = st.selectbox("Select KPI to view (StoryProof)", kpis, key="proof_kpi")
-        ts_df_proof = load_kpi_time_series(selected_kpi_proof, kpi_definitions, data_dir)
+        proof_kpis = [k for k in all_kpis if k in entitled_kpis]
+        selected_kpi_proof = st.selectbox("Explore KPI trend", proof_kpis if proof_kpis else all_kpis, key="proof_kpi")
+        st.caption("The selector changes the trend visualization only. Materiality, evidence, findings, readiness and recommendations are computed across the reporting set.")
+
+        # Selected KPI Authoritative Context Card
+        selected_stats = kpi_stats.get(selected_kpi_proof, {})
+        if selected_stats.get("status") == "INSUFFICIENT_HISTORY":
+            hist_eval = selected_stats.get("history_evaluation", {})
+            avail_d = hist_eval.get("available_days", 21)
+            req_d = hist_eval.get("required_days", 60)
+            st.warning(
+                f"**{selected_kpi_proof} Status**: **N/A** (INSUFFICIENT_HISTORY) — "
+                f"**{avail_d} days available / {req_d} days required** (sparse baseline history — decision gating abstained)"
+            )
+        elif selected_stats.get("status") in ["MATERIAL", "NOT_MATERIAL"]:
+            val_comp = selected_stats.get("comparison", {}).get("value")
+            val_base = selected_stats.get("baseline", {}).get("value")
+            chg = selected_stats.get("change", {})
+            abs_chg = chg.get("absolute", 0.0)
+            rel_chg = chg.get("relative", 0.0)
+            z_val = selected_stats.get("statistical_signal", {}).get("z_score")
+            mat_stat = selected_stats.get("status")
+
+            unit = kpi_definitions.get(selected_kpi_proof, {}).get("display_unit", "")
+            if unit == "percentage":
+                val_str = f"{val_comp * 100:.2f}%" if selected_kpi_proof != "CSAT" else f"{val_comp:.1f} pts"
+                abs_str = f"{abs_chg * 100:+.2f} pp" if selected_kpi_proof != "CSAT" else f"{abs_chg:+.1f} pts"
+                rel_str = f"{rel_chg:+.1f}%"
+            else:
+                val_str = f"{val_comp:.2f} min" if unit == "minutes" else f"{val_comp:.2f}"
+                abs_str = f"{abs_chg:+.2f} min"
+                rel_str = f"{rel_chg:+.1f}%"
+
+            col_c1, col_c2, col_c3, col_c4 = st.columns(4)
+            with col_c1:
+                st.metric("Comparison Value", val_str)
+            with col_c2:
+                st.metric("Change vs Baseline", abs_str, delta=rel_str)
+            with col_c3:
+                st.metric("Materiality Status", mat_stat)
+            with col_c4:
+                st.metric("Statistical Anomaly", f"{z_val:.2f}" if z_val is not None else "N/A", delta="Z-score" if z_val is not None else None, delta_color="off")
+
+        ts_df_proof = load_kpi_time_series(selected_kpi_proof, kpi_definitions, data_dir, role=user_role)
 
         if ts_df_proof is not None and not ts_df_proof.empty:
             fig_proof = build_trend_chart(selected_kpi_proof, ts_df_proof, baseline_period, comparison_period, show_shading=True)
@@ -560,7 +718,7 @@ def main():
         # Materiality details from authoritative engine
         st.write("#### Materiality & Statistical Signals")
         materiality_rows = []
-        for k in kpis:
+        for k in entitled_kpis:
             stats = kpi_stats.get(k, {})
             if stats.get("status") != "ERROR" and "baseline" in stats:
                 z_score = stats.get("statistical_signal", {}).get("z_score")
@@ -593,11 +751,15 @@ def main():
             p_key = "OPERATIONS_MANAGER"
         elif user_role in ["Guest", "Administrator"]:
             # Dropdown/Selector inside the StoryProof Tab to inspect different persona viewpoints
-            persona_choice = st.radio("Select View Profile Perspective", ["CX Manager Perspective", "Operations Manager Perspective"], key="persona_view_profile_choice")
+            persona_choice = st.radio("Select Decision Perspective to Inspect", ["CX Manager Perspective", "Operations Manager Perspective"], key="persona_view_profile_choice")
             if persona_choice == "CX Manager Perspective":
                 p_key = "CX_MANAGER"
             else:
                 p_key = "OPERATIONS_MANAGER"
+
+        persona_display_name = "CX Manager" if p_key == "CX_MANAGER" else "Operations Manager"
+        st.markdown(f"### 👤 Current Decision View: **{persona_display_name}**")
+        st.caption(f"Role Access: **{user_role}** | Tailored narrative synthesis and operational action guidance for {persona_display_name}.")
 
         # Check synthesis and persona views status
         if synthesis_result.get("status") != "SUCCESS" or persona_views.get("status") != "SUCCESS":
@@ -626,7 +788,7 @@ def main():
                             e_refs = f.get("evidence_refs", [])
                             refs = s_refs + e_refs
                             ref_str = f" [Refs: {', '.join(refs)}]" if refs else ""
-                            st.write(f"- **[{cls}]** {text} *{ref_str}*")
+                            st.write(f"- **{format_classification_badge(cls)}** {text} *{ref_str}*")
                             prov_details = get_evidence_provenance_badge(refs)
                             if prov_details:
                                 with st.expander(f"Traceability & Freshness ({len(prov_details)} sources)", expanded=False):
@@ -646,7 +808,7 @@ def main():
                             e_refs = r.get("evidence_refs", [])
                             refs = s_refs + e_refs
                             ref_str = f" [Refs: {', '.join(refs)}]" if refs else ""
-                            st.write(f"- **[{cls}]** {text} *{ref_str}*")
+                            st.write(f"- **{format_classification_badge(cls)}** {text} *{ref_str}*")
                             prov_details = get_evidence_provenance_badge(refs)
                             if prov_details:
                                 with st.expander(f"Traceability & Freshness ({len(prov_details)} sources)", expanded=False):
@@ -690,9 +852,9 @@ def main():
                     for idx, action in enumerate(actions):
                         action_id = action.get("id", "N/A")
                         with st.expander(f"Action: {action_id} — {action.get('title', 'Recommendation')} (Priority: {action.get('priority', 'N/A')})"):
-                            st.write(f"- **WHY (Driver / Finding)**: {action.get('driver') or action.get('observed_finding', 'N/A')}")
+                            st.write(f"- **WHY / DRIVER**: {action.get('driver') or action.get('observed_finding', 'N/A')}")
                             if action.get("controllable_lever"):
-                                st.write(f"- **WHAT LEVER (Controllable Lever)**: {action.get('controllable_lever')}")
+                                st.write(f"- **WHAT LEVER**: {action.get('controllable_lever')}")
                             st.write(f"- **WHAT ACTION**: {action.get('action') or action.get('description', 'N/A')}")
                             if action.get("owner"):
                                 st.write(f"- **WHO OWNS IT**: {action.get('owner')}")
@@ -722,19 +884,54 @@ def main():
                             gov_signal = get_action_governance_signal(action_id=action_id, db_path="data/storyproof_audit.db")
                             st.write("---")
                             st.markdown("##### 🏛️ Human-in-the-Loop Governance Signal")
-                            if gov_signal["status"] == "NO_PRIOR_FEEDBACK":
-                                st.info("ℹ️ **Governance Status**: No prior human feedback recorded for this action in SQLite audit database.")
-                            elif gov_signal["status"] == "HIGH_HISTORICAL_ACCEPTANCE":
-                                st.success(f"✅ **Governance Status**: {gov_signal['label']}")
-                            elif gov_signal["status"] == "FREQUENTLY_REJECTED":
-                                st.error(f"❌ **Governance Status**: {gov_signal['label']}")
-                            elif gov_signal["status"] == "FREQUENTLY_FLAGGED":
-                                st.warning(f"⚠️ **Governance Status**: {gov_signal['label']}")
-                            else:
-                                st.info(f"📊 **Governance Status**: {gov_signal['label']}")
+                            st.caption("**Feedback Learning Flow**: `1. Current Recommendation` ➔ `2. Historical Feedback Signal` ➔ `3. Governance Treatment & Decision`")
+
+                            status = gov_signal.get("status", "NO_PRIOR_FEEDBACK")
+                            total_rev = gov_signal.get("total_reviews", 0)
+                            appr_cnt = gov_signal.get("approved_count", 0)
+                            rej_cnt = gov_signal.get("rejected_count", 0)
+                            flag_cnt = gov_signal.get("flagged_count", 0)
+                            guidance_text = gov_signal.get("guidance", "Standard operational review applies.")
+                            gov_decision = gov_signal.get("governance_decision", "STANDARD_REVIEW")
+                            review_req = gov_signal.get("review_required", False)
+
+                            if status == "NO_PRIOR_FEEDBACK":
+                                st.info(
+                                    "ℹ️ **Governance Status**: NO_PRIOR_FEEDBACK — No historical analyst reviews.\n\n"
+                                    f"**Governance Decision**: `{gov_decision}` | Review Required: `{review_req}`\n\n"
+                                    f"**Governance Guidance**: {guidance_text}"
+                                )
+                            elif status == "HIGH_HISTORICAL_ACCEPTANCE":
+                                st.success(
+                                    f"✅ **Governance Status**: {gov_signal['label']}\n\n"
+                                    f"- **Historical Reviews**: Total: {total_rev} | Approved: {appr_cnt} | Rejected: {rej_cnt} | Flagged: {flag_cnt}\n"
+                                    f"- **Governance Decision**: `{gov_decision}` | Review Required: `{review_req}`\n"
+                                    f"- **Governance Guidance**: {guidance_text}"
+                                )
+                            elif status == "FREQUENTLY_REJECTED":
+                                st.error(
+                                    f"❌ **Governance Status**: {gov_signal['label']}\n\n"
+                                    f"- **Historical Reviews**: Total: {total_rev} | Approved: {appr_cnt} | Rejected: {rej_cnt} | Flagged: {flag_cnt}\n"
+                                    f"- **Governance Decision**: `{gov_decision}` | Review Required: `{review_req}`\n"
+                                    f"- **Governance Guidance**: ⚠️ {guidance_text}"
+                                )
+                            elif status == "FREQUENTLY_FLAGGED":
+                                st.warning(
+                                    f"⚠️ **Governance Status**: {gov_signal['label']}\n\n"
+                                    f"- **Historical Reviews**: Total: {total_rev} | Approved: {appr_cnt} | Rejected: {rej_cnt} | Flagged: {flag_cnt}\n"
+                                    f"- **Governance Decision**: `{gov_decision}` | Review Required: `{review_req}`\n"
+                                    f"- **Governance Guidance**: ⚠️ {guidance_text}"
+                                )
+                            else:  # MIXED_FEEDBACK
+                                st.info(
+                                    f"📊 **Governance Status**: {gov_signal['label']}\n\n"
+                                    f"- **Historical Reviews**: Total: {total_rev} | Approved: {appr_cnt} | Rejected: {rej_cnt} | Flagged: {flag_cnt}\n"
+                                    f"- **Governance Decision**: `{gov_decision}` | Review Required: `{review_req}`\n"
+                                    f"- **Governance Guidance**: {guidance_text}"
+                                )
 
                             if gov_signal.get("recent_comments"):
-                                with st.expander("View Prior Analyst Feedback Notes", expanded=False):
+                                with st.expander("Recent analyst comments (human governance notes — not factual data evidence)", expanded=False):
                                     for comm in gov_signal["recent_comments"]:
                                         st.write(f"- **[{comm['status']}]** by *{comm['analyst']}* ({comm['timestamp'][:10]}): \"{comm['comment']}\"")
 
@@ -793,6 +990,7 @@ def main():
             # Fetch optimized database metrics (Eliminates N+1 query loop)
             total_runs, total_feedback, db_active = calculate_database_metrics()
 
+            st.markdown("#### ⚡ Actual Runtime Telemetry")
             col_metric1, col_metric2, col_metric3, col_metric4 = st.columns(4)
             with col_metric1:
                 st.metric("Execution Latency", f"{latency:.4f}s")
@@ -812,7 +1010,9 @@ def main():
             cost_per_run = cost_metrics["cost_per_run"]
             total_projected_cost = cost_metrics["total_projected_cost"]
 
-            st.info("💡 **SIMULATED / PROJECTED LLM API Usage Metrics**\n"
+            st.markdown("#### 💡 Simulated / Projected LLM API Usage Model")
+            st.caption("StoryProof executes 100% deterministically without external model calls. The projections below illustrate hypothetical enterprise unit economics if natural-language expansion were enabled.")
+            st.info("📊 **SIMULATED / PROJECTED LLM API Usage Metrics (Economic Model)**\n"
                     f"- Simulated Input Tokens: {simulated_input_tokens} tokens per run\n"
                     f"- Simulated Output Tokens: {simulated_output_tokens} tokens per run\n"
                     f"- Projection Pricing Rate: ${input_rate_per_1k}/1K Input, ${output_rate_per_1k}/1K Output\n"

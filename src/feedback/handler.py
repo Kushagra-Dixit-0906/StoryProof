@@ -343,8 +343,21 @@ def get_action_governance_signal(action_id=None, db_path="data/storyproof_audit.
       - flagged_rate (float or None): flagged_count / total_reviews
       - status (str): 'NO_PRIOR_FEEDBACK' | 'HIGH_HISTORICAL_ACCEPTANCE' | 'FREQUENTLY_REJECTED' | 'FREQUENTLY_FLAGGED' | 'MIXED_FEEDBACK'
       - label (str): Human-readable governance summary
+      - guidance (str): Deterministic operational review guidance
+      - governance_decision (str): Deterministic governance treatment derived from historical feedback
+      - review_required (bool): Whether heightened/escalated human review is required before deployment
       - acceptance_score (float or None): 0.0 to 1.0 acceptance metric (None if no reviews)
       - recent_comments (list of dicts): Up to 3 recent non-empty comments
+
+    Governance Decision Semantics:
+      - STANDARD_REVIEW: No historical feedback; normal operational review applies.
+      - HISTORICAL_SUPPORT: High historical analyst acceptance; standard review with confidence.
+      - CONTEXTUAL_REVIEW: Mixed feedback; detailed cross-team review required before deployment.
+      - HEIGHTENED_REVIEW: Frequently flagged; explicit human review required before deployment.
+      - ESCALATED_REVIEW: Frequently rejected; governance escalation required before deployment.
+
+    IMPORTANT: governance_decision and review_required are governance metadata only.
+    They do NOT alter KPI materiality, evidence confidence, or analytical truth.
     """
     default_signal = {
         "action_id": action_id,
@@ -357,6 +370,9 @@ def get_action_governance_signal(action_id=None, db_path="data/storyproof_audit.
         "flagged_rate": None,
         "status": "NO_PRIOR_FEEDBACK",
         "label": "No prior human feedback recorded for this action.",
+        "guidance": "Standard operational review applies. No prior analyst feedback recorded.",
+        "governance_decision": "STANDARD_REVIEW",
+        "review_required": False,
         "acceptance_score": None,
         "recent_comments": []
     }
@@ -391,15 +407,27 @@ def get_action_governance_signal(action_id=None, db_path="data/storyproof_audit.
         if approval_rate >= 0.70:
             status = "HIGH_HISTORICAL_ACCEPTANCE"
             label = f"High Analyst Acceptance ({approved_count}/{total_reviews} approved, {approval_rate:.0%})"
+            guidance = "Strong historical analyst consensus. Historically approved for operational deployment."
+            governance_decision = "HISTORICAL_SUPPORT"
+            review_required = False
         elif rejection_rate >= 0.50:
             status = "FREQUENTLY_REJECTED"
             label = f"Frequently Rejected by Analysts ({rejected_count}/{total_reviews} rejected, {rejection_rate:.0%})"
+            guidance = "Historically rejected by analysts. Evaluate current operational context carefully before proceeding."
+            governance_decision = "ESCALATED_REVIEW"
+            review_required = True
         elif flagged_rate >= 0.40:
             status = "FREQUENTLY_FLAGGED"
             label = f"Frequently Flagged for Review ({flagged_count}/{total_reviews} flagged, {flagged_rate:.0%})"
+            guidance = "Human review recommended. Previous analysts frequently flagged this recommendation for additional scrutiny."
+            governance_decision = "HEIGHTENED_REVIEW"
+            review_required = True
         else:
             status = "MIXED_FEEDBACK"
             label = f"Mixed Analyst Feedback ({approved_count} approved, {rejected_count} rejected, {flagged_count} flagged)"
+            guidance = "Analyst evaluations are divided. Detailed operational review recommended before proceeding."
+            governance_decision = "CONTEXTUAL_REVIEW"
+            review_required = True
 
         recent_comments = []
         for r in rows:
@@ -425,6 +453,9 @@ def get_action_governance_signal(action_id=None, db_path="data/storyproof_audit.
             "flagged_rate": round(flagged_rate, 4),
             "status": status,
             "label": label,
+            "guidance": guidance,
+            "governance_decision": governance_decision,
+            "review_required": review_required,
             "acceptance_score": round(approval_rate, 4),
             "recent_comments": recent_comments
         }

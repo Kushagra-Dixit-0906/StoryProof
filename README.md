@@ -2,327 +2,986 @@
 
 > **"Don't just tell the story. Verify it."**
 
-StoryProof is an evidence-first KPI intelligence-to-action engine built as a working prototype for the **Accenture Innovation Challenge 2026, Track 3: BusinessIntelligence.ai**. 
+StoryProof is an evidence-first KPI intelligence-to-action engine built as a working prototype for the **Accenture Innovation Challenge 2026, Track 3: BusinessIntelligence.ai**.
 
-Traditional BI tells a business user *what* changed and may generate a plausible explanation. StoryProof adds a rigorous **evidence-verification layer** to authenticate explanations and quantify uncertainty before business decisions are made.
+Traditional BI primarily answers **what changed**. StoryProof adds an evidence-verification and decision-readiness layer that evaluates whether a plausible explanation is actually supported by available quantitative and qualitative evidence before an operational recommendation is made.
 
 ---
 
-## 🏗️ Proposed Architecture
+## 1. What StoryProof Does
 
-StoryProof is designed around the core principle that **Large Language Models (LLMs) must NOT be the source of quantitative truth**. All calculations, materiality checks, driver analyses, and confidence scoring are performed using deterministic Python code. The LLM's role is restricted to natural-language interpretation, narrative synthesis, and persona-specific communication using *only* the verified evidence provided.
+StoryProof is designed around a simple principle:
 
-Below is the modular project structure:
+> **A KPI movement is not automatically an explanation, and an explanation is not automatically a decision.**
+
+The system therefore moves through five analytical stages:
+
+1. **Observe** KPI movements and detect material changes.
+2. **Explain** changes through deterministic driver decomposition.
+3. **Challenge** the leading explanation using competing hypotheses and confounders.
+4. **Verify** the explanation against heterogeneous evidence and detect cross-KPI tensions.
+5. **Decide** whether the available evidence is sufficient for an operational recommendation.
+
+The prototype is deliberately evidence-first. It does not require a live external LLM API to execute its analytical workflow.
+
+---
+
+## 2. Why StoryProof Is Different
+
+### Traditional BI
+
+Traditional BI is strong at:
+
+- KPI monitoring
+- Trend visualization
+- Aggregation
+- Filtering
+- Reporting
+
+However, a dashboard can make a correlation or plausible story appear more certain than the underlying evidence warrants.
+
+### StoryProof
+
+StoryProof adds:
+
+- KPI semantic contracts
+- Materiality and baseline-volatility checks
+- Deterministic driver attribution
+- Competing hypotheses
+- Confounder detection
+- Unstructured evidence retrieval
+- Cross-KPI tension detection
+- Explicit uncertainty and abstention
+- Decision-readiness scoring
+- Evidence-gated recommendations
+- Role-based access simulation
+- Human analyst feedback and governance history
+- Auditable execution history
+
+The goal is not to generate a more persuasive story.
+
+The goal is to determine **whether the story is sufficiently supported to act on**.
+
+---
+
+## 3. Demonstrated Business Scenario
+
+The prototype models a customer-support operation undergoing an automated-assistant rollout while other operational events occur concurrently.
+
+The central business tension is:
+
+- **AHT improves sharply**
+- **FCR is broadly stable with a slight decline**
+- **CSAT deteriorates materially**
+- **Repeat Contact Rate increases materially**
+- **Retention deteriorates**
+- **AI Resolution Rate lacks sufficient history for a reliable conclusion**
+
+This creates a realistic BI failure mode: a decision-maker could celebrate the large AHT improvement while missing evidence that customer outcomes are deteriorating.
+
+StoryProof is designed to surface that tension before recommending an intervention.
+
+---
+
+## 4. Representative KPI Findings
+
+The current validated scenario contains the following representative movements:
+
+- **AHT:** 10.16 min → 5.77 min, approximately **-43.2%**
+- **FCR:** 68.4% → 67.5%, approximately **-0.86 percentage points**
+- **CSAT:** 78.0 → 68.9, approximately **-9.1 points**
+- **Repeat Contact Rate:** 16.4% → 30.4%, approximately **+14.0 percentage points**
+- **Retention Rate:** 95.59% → 94.49%, approximately **-1.10 percentage points**
+- **AI Resolution Rate:** insufficient historical depth for a reliable materiality conclusion
+
+These values are used to demonstrate how an apparently positive operational efficiency movement can coexist with negative customer outcomes.
+
+---
+
+## 5. Analytical Pipeline
+
+```text
+┌───────────────────────────┐
+│ 1. Traditional BI         │
+│ Reports KPI movements     │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 2. KPI Tension Detection  │
+│ Finds conflicting signals │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 3. Evidence & Hypotheses  │
+│ Tests competing stories   │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 4. Decision Readiness     │
+│ Measures evidence quality │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 5. Recommended Action     │
+│ Applies evidence gates    │
+└───────────────────────────┘
+```
+
+### Stage 1 — Traditional BI
+
+Displays KPI trends and establishes the observed change.
+
+### Stage 2 — KPI Semantics & Materiality
+
+Evaluates metrics against configured units, thresholds, baseline volatility, and available history.
+
+### Stage 3 — Driver Decomposition & Competing Hypotheses
+
+Separates measurable contribution patterns and evaluates competing explanations such as:
+
+- Automated-assistant rollout
+- CRM system patch
+- Volume or customer-mix shift
+
+### Stage 4 — Evidence Verification & Tension Detection
+
+Cross-references quantitative movements with unstructured evidence such as:
+
+- Support transcripts
+- Customer feedback
+- Operational reports
+
+The system highlights situations where efficiency gains coexist with customer dissatisfaction or repeat-contact signals.
+
+### Stage 5 — Decision Readiness & Action
+
+Evaluates evidence sufficiency and emits recommendations only when the corresponding evidence gates are satisfied.
+
+---
+
+## 6. Deterministic Analytical Core
+
+The analytical core is intentionally deterministic and has **no live external LLM dependency**.
+
+### KPI Calculations
+
+Aggregations, ratio calculations, unit normalization, and comparison metrics are calculated directly from the underlying data.
+
+Implementation:
+
+`src/engine/materiality.py`
+
+### Materiality & Volatility
+
+Materiality threshold crossings and standardized baseline Z-scores are computed mathematically.
+
+Implementation:
+
+`src/engine/materiality.py`
+
+### Driver Attribution
+
+Driver contribution analysis uses mathematical mix-rate variance decomposition and is designed to reconcile to the observed total change.
+
+Implementation:
+
+`src/engine/drivers.py`
+
+### Hypothesis Evaluation
+
+Competing hypotheses are evaluated through deterministic criteria including:
+
+- Pre/post concentration differences
+- Volume-weighted comparisons
+- Rollout-phase trends
+- Concurrent system events
+
+Implementation:
+
+`src/engine/hypotheses.py`
+
+### Evidence Ingestion
+
+Unstructured evidence is parsed into structured records with reproducible source identifiers.
+
+Implementation:
+
+`src/engine/evidence.py`
+
+### Evidence Retrieval
+
+Evidence is retrieved using deterministic keyword, metadata, and matching logic.
+
+Implementation:
+
+`src/engine/retrieval.py`
+
+### Narrative Synthesis
+
+The synthesis layer combines quantitative findings, hypothesis results, qualitative evidence, and KPI tensions using controlled templates.
+
+Implementation:
+
+`src/engine/synthesis.py`
+
+### Action Gating
+
+Recommendations are generated through explicit rule-based triggers. System-level interventions require the relevant authoritative hypothesis evidence.
+
+Implementation:
+
+`src/engine/actions.py`
+
+### Governance
+
+Analyst reviews are stored and aggregated into governance signals without modifying the underlying KPI truth.
+
+Implementation:
+
+`src/feedback/handler.py`
+
+---
+
+## 7. Causality Policy
+
+StoryProof deliberately separates observed facts from explanations.
+
+### FACT
+
+A directly measured quantitative observation.
+
+Example:
+
+> AHT changed from 10.16 to 5.77 minutes.
+
+### ASSOCIATION
+
+A statistically observed relationship without a causal claim.
+
+Example:
+
+> The handling-time reduction is associated with the automated-assistant rollout.
+
+### HYPOTHESIS
+
+A candidate explanation currently under evaluation.
+
+Example:
+
+> The automated assistant may close tickets before the underlying issue is resolved, representing a candidate explanation for increased repeat contacts.
+
+### CONTEXT / CONFOUNDER
+
+A concurrent external factor that may provide an alternative explanation.
+
+Example:
+
+> A CRM Cloud software patch is identified as a concurrent operational event.
+
+### LIMITATION
+
+A data or history constraint that prevents a stronger conclusion.
+
+Example:
+
+> A KPI may not be directly segmentable by chatbot assistance because of source-log schema limitations.
+
+All synthesized views use a causality disclaimer:
+
+> **"The available evidence does not establish causality; observed changes represent associations and candidate explanations only."**
+
+This policy is central to StoryProof's evidence-first design.
+
+---
+
+## 8. Decision Readiness
+
+StoryProof does not treat every analytical result as immediately actionable.
+
+The readiness layer considers factors such as:
+
+- Data sufficiency
+- Historical depth
+- Active confounders
+- Evidence quality
+- Cross-KPI tension
+- Unverified material changes
+
+Representative readiness flags include:
+
+- `insufficient_history`
+- `high_ambiguity`
+- `metric_tension_detected`
+- `unverified_material_change`
+
+The purpose is to make **abstention a valid analytical outcome**.
+
+For example, the AI Resolution Rate series contains insufficient historical depth in the demonstrated scenario. StoryProof therefore avoids presenting a false level of confidence.
+
+---
+
+## 9. Driver Analysis
+
+StoryProof uses deterministic contribution analysis to investigate observed KPI movement.
+
+The driver layer is intended to answer:
+
+> **Which measurable mix or operational components contributed to the observed change?**
+
+The implementation includes mix-rate variance analysis and Shapley-style contribution decomposition.
+
+The contribution results are used as analytical evidence, not as automatic causal proof.
+
+---
+
+## 10. Competing Hypotheses
+
+The prototype evaluates multiple candidate explanations rather than accepting the first plausible narrative.
+
+Current hypothesis categories include:
+
+### AI Rollout
+
+Evaluates whether KPI movements align with the rollout phases of the automated assistant.
+
+### CRM Patch
+
+Evaluates whether a concurrent CRM software change overlaps with KPI movements.
+
+### Mix Shift
+
+Evaluates whether changes in customer or operational mix can explain part of the observed movement.
+
+This structure helps prevent a single intervention from receiving automatic causal credit merely because its timeline overlaps with the KPI change.
+
+---
+
+## 11. Evidence Layer
+
+StoryProof combines structured KPI data with unstructured operational evidence.
+
+Current evidence sources include:
+
+- Support transcripts
+- Customer feedback comments
+- Program or operational reports
+
+Each evidence record retains provenance information so that a surfaced statement can be traced back to its source.
+
+The retrieval layer uses deterministic matching rather than a live generative retrieval system.
+
+This supports the project's central requirement:
+
+> **The explanation should remain traceable to evidence.**
+
+---
+
+## 12. Cross-KPI Tension Detection
+
+A major StoryProof capability is detecting situations where individual KPI improvements hide broader business deterioration.
+
+The demonstrated scenario contains a strong example:
+
+```text
+AHT
+↓ significantly
+
+while
+
+CSAT
+↓ significantly
+
+Repeat Contact Rate
+↑ significantly
+
+Retention
+↓
+
+FCR
+↓ slightly
+```
+
+A traditional efficiency dashboard may emphasize the AHT improvement.
+
+StoryProof instead asks whether the improvement is accompanied by evidence of degraded resolution quality or customer experience.
+
+This is the core **"verify the story"** moment in the demonstration.
+
+---
+
+## 13. Action Recommendation Engine
+
+Recommendations are structured across seven operational dimensions.
+
+### WHY / DRIVER
+
+The observed KPI movement or evidence tension that triggered the recommendation.
+
+### WHAT LEVER
+
+The business lever available to the responsible manager.
+
+Examples:
+
+- Bot routing rules
+- Software release isolation
+- Data ingestion window
+
+### WHAT ACTION
+
+The concrete operational guidance.
+
+### WHO OWNS IT
+
+The accountable role, such as:
+
+- Support Operations Manager
+- CX Manager
+
+### EXPECTED IMPACT
+
+The intended operational outcome.
+
+### EVIDENCE CONFIDENCE
+
+A structured confidence treatment derived from the evidence state.
+
+Representative states include:
+
+- `LOW_BASELINE_CONFIDENCE`
+- `MODERATE_ASSOCIATION`
+- `HIGH_TENSION_RISK`
+- `VERIFIED_READY`
+
+### HOW TO MONITOR
+
+Leading indicators and monitoring cadence to evaluate the intervention.
+
+---
+
+## 14. Action Types
+
+### `STABILIZE_BASELINE`
+
+Used when insufficient historical baseline data exists.
+
+Example:
+
+Sparse AI Resolution Rate history can cause StoryProof to recommend stabilizing the measurement baseline before scaling a decision.
+
+### `SYSTEM_PATCH`
+
+Used when a concurrent system release may be contributing to a KPI movement.
+
+This recommendation is strictly gated by supporting CRM-hypothesis evidence.
+
+### `RESOLUTION_GUARDRAIL`
+
+Used when operational efficiency improvements conflict with customer-quality signals such as complaints or repeat contacts.
+
+Potential controls include:
+
+- Auto-closure guardrails
+- Routing controls
+- Resolution-quality monitoring
+
+### `OPERATIONAL_OPTIMIZATION`
+
+Used only when the relevant improvement is sufficiently verified and active risk flags do not block the recommendation.
+
+---
+
+## 15. Persona Views
+
+StoryProof provides role-oriented views so that different managers can focus on the information relevant to their decisions.
+
+### CX Manager
+
+Focuses on:
+
+- AHT
+- FCR
+- CSAT
+- Repeat Contact Rate
+- Retention
+- Customer evidence
+
+The internal AI Resolution Rate metric is restricted.
+
+### Operations Manager
+
+Focuses on:
+
+- AHT
+- FCR
+- CSAT
+- Repeat Contact Rate
+- AI Resolution Rate
+- Operational drivers
+- System and process evidence
+
+Retention is restricted in the prototype's entitlement model.
+
+### Guest
+
+Receives read-only access to the common operational KPI subset.
+
+Administrative functions are disabled.
+
+### Administrator
+
+Receives full access to:
+
+- All six KPIs
+- Audit history
+- Execution history
+- Feedback records
+- Observability information
+
+---
+
+## 16. Prototype Role & Entitlement Simulation
+
+Role-based access is simulated from the semantic KPI contract in:
+
+`config/kpi_definitions.yaml`
+
+Backend access enforcement is implemented through:
+
+- `get_accessible_kpis()`
+- `check_kpi_access()`
+
+The restriction is applied at the computation and retrieval layer rather than being only a visual UI restriction.
+
+Role switching demonstrates the authorization contract. In an enterprise deployment, this layer could connect to an SSO/IAM provider.
+
+---
+
+## 17. Human-in-the-Loop Governance
+
+StoryProof includes an auditable analyst-feedback mechanism backed by SQLite.
+
+Analyst reviews can be:
+
+- `APPROVED`
+- `REJECTED`
+- `FLAGGED`
+
+Historical feedback is aggregated into governance treatment for matching recommendations.
+
+Representative governance outcomes include:
+
+- `STANDARD_REVIEW`
+- `HISTORICAL_SUPPORT`
+- `CONTEXTUAL_REVIEW`
+- `HEIGHTENED_REVIEW`
+- `ESCALATED_REVIEW`
+
+An important design rule is maintained:
+
+> **Governance feedback does not modify data truth.**
+
+Historical reviews do not change:
+
+- KPI calculations
+- Materiality
+- Evidence truth
+- Driver decomposition
+- Analytical confidence
+
+They only influence the governance treatment applied to future matching recommendations.
+
+---
+
+## 18. Audit Trail & Observability
+
+The Administrator Audit Console separates actual runtime measurements from simulated economic projections.
+
+### Actual Runtime Telemetry
+
+The prototype records or exposes:
+
+- Deterministic engine execution latency
+- SQLite audit-store status
+- Execution-run counts
+- Feedback-record counts
+- Historical execution runs
+- Parameter restoration information
+
+### Simulated Economic Projection
+
+The prototype also contains an illustrative token-cost model:
+
+- 8,500 input tokens per run
+- 1,200 output tokens per run
+- $0.005 per 1k input tokens
+- $0.015 per 1k output tokens
+
+These figures are **simulated/projected economics**, not measured LLM consumption.
+
+The prototype itself executes without external LLM API calls.
+
+---
+
+## 19. Execution Run IDs
+
+Each analytical execution receives a `run_id`.
+
+The identifier is used to connect:
+
+- Execution parameters
+- Analytical results
+- Audit records
+- Governance history
+
+This provides a point-in-time reference for reviewing how an analytical result was produced.
+
+The runtime SQLite audit database is generated locally and is intentionally excluded from source control.
+
+---
+
+## 20. Repository Structure
 
 ```text
 storyproof/
 │
-├── .venv/                      # Python virtual environment
-├── requirements.txt            # Project dependencies
-├── README.md                   # Architecture and milestones documentation
-├── app.py                      # Streamlit main entrypoint
+├── config/
+│   ├── kpi_definitions.yaml
+│   ├── evidence_sources.yaml
+│   └── simulation_config.yaml
 │
-└── src/                        # Core codebase
-    ├── __init__.py
-    │
-    ├── data/                   # Data Simulation & Loading
-    │   ├── __init__.py
-    │   ├── simulator.py        # Illustrative Customer Support performance simulation
-    │   └── loader.py           # Multi-source data reconciliation (Support, CX, CRM)
-    │
-    ├── engine/                 # Deterministic Analytics Engine
-    │   ├── __init__.py
-    │   ├── semantics.py        # KPI semantic definitions and formulas
-    │   ├── materiality.py      # Statistical materiality & anomaly detection
-    │   └── drivers.py          # Contribution & driver analysis (quantitative attribution)
-    │
-    ├── verification/           # Verification & Evidence Layer
-    │   ├── __init__.py
-    │   └── verifier.py         # Cross-references structured data with unstructured logs
-    │
-    ├── narrative/              # Narrative & Persona-Specific Synthesis
-    │   ├── __init__.py
-    │   ├── personas.py         # Persona configurations (CX vs. Operations)
-    │   ├── generator.py        # Safe narrative synthesis (templated or LLM-driven)
-    │   └── actions.py          # Action recommendation engine based on verified proof
-    │
-    └── feedback/               # Analyst Feedback & Observability
-        ├── __init__.py
-        └── handler.py          # Logging feedback to SQLite and tracking runtime metadata
+├── data/
+│   ├── support_daily.csv
+│   ├── cx_weekly.csv
+│   ├── crm_monthly.csv
+│   ├── ai_resolution_rate.csv
+│   └── unstructured/
+│       ├── support_transcripts.txt
+│       ├── customer_feedback.txt
+│       └── rollout_report.txt
+│
+├── scripts/
+│   ├── generate_data.py
+│   └── validate_data.py
+│
+├── src/
+│   ├── engine/
+│   │   ├── actions.py
+│   │   ├── drivers.py
+│   │   ├── evidence.py
+│   │   ├── hypotheses.py
+│   │   ├── materiality.py
+│   │   ├── personas.py
+│   │   ├── readiness.py
+│   │   ├── retrieval.py
+│   │   └── synthesis.py
+│   │
+│   └── feedback/
+│       └── handler.py
+│
+├── tests/
+│   ├── test_actions.py
+│   ├── test_dashboard_integration.py
+│   ├── test_dashboard_layout.py
+│   ├── test_drivers.py
+│   ├── test_evidence.py
+│   ├── test_feedback.py
+│   ├── test_hypotheses.py
+│   ├── test_materiality.py
+│   ├── test_personas.py
+│   ├── test_readiness.py
+│   ├── test_retrieval.py
+│   └── test_synthesis.py
+│
+├── app.py
+├── requirements.txt
+└── README.md
 ```
 
----
+### Runtime-only files
 
-## 📈 Core Analytical Flow
+The following are intentionally not part of the source repository:
 
-1. **DATA**: Daily support operations, weekly CX metrics, monthly CRM data, and unstructured logs.
-2. **KPI SEMANTICS**: Structured relationship models connecting KPIs (AHT, FCR, CSAT, Repeat Contacts, Retention).
-3. **MATERIAL CHANGE**: Detection of significant KPI shifts using statistical baselines.
-4. **DRIVER ANALYSIS**: Attribution of changes to competing hypotheses (e.g., AI rollout, resolution quality, customer mix).
-5. **EVIDENCE VERIFICATION**: Checking explanations against unstructured logs (e.g., customer transcripts).
-6. **PERSONA-SPECIFIC STORY**: Formulating tailored narratives for different roles (CX Manager vs. Operations Manager).
-7. **CONFIDENCE / ABSTENTION**: Emphasizing uncertainty and abstaining when evidence is conflicting or sparse.
-8. **ACTION**: Recommending verified corrective actions.
-9. **USER FEEDBACK**: Logging analyst corrections to improve the system.
+- `.venv/`
+- Python cache files
+- `.pytest_cache/`
+- `.env`
+- Streamlit secrets
+- `data/storyproof_audit.db`
 
----
-
-## ⚖️ Causality Policy & Analytical Principles
-
-StoryProof makes a strict distinction between quantitative correlations and causal claims. The analytics engine is designed to prevent hasty causal assertions:
-
-*   **OBSERVATION (Fact)**: High-resolution quantitative changes measured directly (e.g., *"AI-assisted support contacts show a 51% drop in handling time."*).
-*   **ASSOCIATION (Correlation)**: A statistical overlap between two patterns (e.g., *"An increase in AI-assisted contact share correlates with a drop in CSAT."*).
-*   **HYPOTHESIS (Potential Driver)**: A candidate explanation under investigation (e.g., *"Reduced resolution quality from AI containment may drive CSAT deterioration."*).
-*   **CONFOUNDING FACTOR (Alternative Explanation)**: Independent external forces (e.g., *"CRM Cloud release bug in May represents a competing explanation for CSAT decline."*).
-*   **CAUSAL CLAIM (Unverified)**: Observational data alone is insufficient to assert causality. StoryProof demands cross-validation of structured metrics against unstructured transcripts and status reports before classifying an explanation.
+The SQLite audit database is generated by the application at runtime.
 
 ---
 
-## 🏁 Development Milestones
+## 21. Configuration
 
-- [x] **Milestone 1: Project Architecture & Skeleton (v0.1)**
-  - Establish modular folder structure.
-  - Create standard Streamlit entrypoint and requirements.
-- [x] **Milestone 2: Data Simulation & KPI Semantics (v0.2)**
-  - Generate simulated multi-source customer support datasets containing the baseline and AI-assisted rollout periods.
-  - Write deterministic KPI calculation and materiality baseline tests.
-- [x] **Milestone 3A: Materiality & Change Detection Engine (v0.3a)**
-  - Implement a deterministic, math-only KPI parser and materiality detector in `src/engine/materiality.py`.
-  - Calculate period changes respecting ratio-aggregation semantics and configured units (minutes for AHT, percentage points for FCR,CSAT,Repeat,Retention).
-  - Model historical variation at the natural grain (daily/weekly/monthly) and standard deviation/z-scores.
-  - Separate business materiality from statistical volatility.
-  - Enforce minimum history requirements (abstaining on sparse data like AI Resolution Rate).
-- [x] **Milestone 3B.1: Deterministic Driver & Contribution Analysis Core (v0.3b)**
-  - Implement a deterministic, math-only driver profiler and mix-rate decomposition in `src/engine/drivers.py`.
-  - Calculate exposure/denominator share and midpoint/Shapley-style decomposition (reconciling exactly to overall change within $10^{-9}$).
-  - Implement driver signal ranking (`contribution_magnitude`) and separate AI-assisted operational comparison across rollout phases.
-  - Enforce strict causality policy (avoiding causal verbs; separating Fact, Association, and Hypothesis) and data limitation guards/abstentions.
-- [x] **Milestone 3B.2: Confounder & Hypotheses Analysis (v0.3.2)**
-  - Implement a deterministic, evidence-synthesis engine in `src/engine/hypotheses.py` evaluating competing hypotheses (AI Rollout, CRM Cloud Patch, and Mix Shift).
-  - Define concentration metrics for pre/post patch differential signal using a volume-weighted control group.
-  - Implement mix share classification (LOW, MODERATE, HIGH) to isolate structural volume shifts.
-  - Formulate a deterministic synthesis module mapping hypothesis strength and data limitations to overall evidence state.
-  - Enforce strict Causality Policy, safety guards, and abstentions (CSAT/Retention by AI rollout -> `NOT_AVAILABLE`).
-- [x] **Milestone 3C.1: Unstructured Evidence Ingestion & Provenance Layer (v0.3.3)**
-  - Implement a deterministic evidence-ingestion layer in `src/engine/evidence.py` to parse qualitative support chat transcripts, survey reviews, and contextual rollout reports.
-  - Implement robust path resolution checking relative to workspace and data directories.
-  - Parse metadata (dates, segments, products, ratings, support IDs, agents) safely without inventing missing fields.
-  - Preserves exact raw text and associates reproducible deterministic IDs (`source_key_index`) and provenance records.
-- [x] **Milestone 3C.2: Qualitative Evidence Verification & Alignment (v0.3.4)**
-  - Implement a deterministic qualitative evidence retrieval and linking layer in `src/engine/retrieval.py` supporting exact product, segment, and date-window matches.
-  - Implement regex-based safe keyword matching (`\b` boundaries) and capped scoring (+3.0 max) to ensure auditable relevance calculation.
-- [x] **Milestone 3C.3: Qualitative & Quantitative Narrative Synthesis (v0.3.5)**
-  - Implement a deterministic, template-based narrative synthesis layer in `src/engine/synthesis.py` combining materiality (3A), drivers (3B.1), hypotheses (3B.2), and retrieved qualitative evidence (3C.2).
-  - Enforce conservative evidence classification (FACT, ASSOCIATION, HYPOTHESIS, CONTEXT, LIMITATION) and strict causality safeguards (neutral verbs only, mandatory causality disclaimer).
-  - Implement multi-KPI tension/contradiction detection and reporting to capture divergence between structured speedups and qualitative complaints.
-- [x] **Milestone 4: Persona Narratives & Decision Flags (v0.4)**
-  - [x] **Milestone 4.1: Persona Narrative Engine**
-    - **CX Manager Perspective**: Focuses on CSAT, FCR, Repeat Contact Rate, Retention, qualitative customer complaints, and customer-impacting tensions.
-    - **Operations Manager Perspective**: Focuses on AHT, FCR, Repeat Contact Rate, AI-assisted performance, driver contribution, CRM patch confounders, and efficiency vs. resolution-quality tensions.
-    - **Deterministic Template-Based Generation**: Employs neutral observational language using predefined templates.
-    - **Reuse of Verified 3C.3 Findings & Reference Preservation**: Reorganizes and prioritizes existing findings from the synthesis report while preserving `evidence_refs`, `structured_refs`, and `classifications` without inventing any IDs.
-    - **Causality Safeguards**: Avoids prohibited causal terminology (e.g., caused, causes, led to, due to) and embeds a mandatory causality disclaimer in both views.
-    - **Missing-Input Abstention**: Returns `NOT_AVAILABLE` status cleanly if the input synthesis result is missing, invalid, or empty.
-  - [x] **Milestone 4.2: Decision Readiness Flags**
-  - [x] **Milestone 4.3: Action Recommendation Engine**
-    - **Action Schema**: Standardized schema including id, action_type, title, description, priority, observed_finding, reason, justification, structured_refs, evidence_refs, and trigger_info.
-    - **Dynamic Rules Engine**: Maps quantitative shifts and qualitative/readiness findings to operational, systems patch, data stabilization, and quality guardrail actions.
-    - **Causality Policy & Differentiations**: Enforces strictly observational justifications (no causal claims), preserves disclaimer, and tailors recommendations per manager persona (CX vs Ops).
-  - [x] **Milestone 4.4: Analyst Feedback & Audit Logging Layer**
-    - **Schema & Database**: Implements a normalized SQLite audit database (`data/storyproof_audit.db`) with tables for execution runs and analyst feedback.
-    - **Content-Derived Runs**: Computes unique, content-derived run identifiers for each specific execution instant to prevent duplicate logs.
-    - **Human Correction Logging**: Captures analyst ratings, comments, and corrections dynamically, enforcing SQL injection safety, foreign keys, and status validation constraints.
-- [x] **Milestone 5: Interactive Dashboard & Observability (v1.0)**
-  - [x] **Milestone 5.1: Core Dual-View Layout & Quantitative Charts**
-    - Visual comparison: Traditional BI View vs. StoryProof Verification View.
-    - KPI scorecards with unit conversions and baseline vs. comparison delta calculations.
-    - Interactive Plotly time-series trend charts with period shading.
-  - [x] **Milestone 5.2: Persona Views, Readiness Banners & Action Recommendations**
-    - Persona-specific narrative summaries and prioritized key findings / risks.
-    - Decision readiness status cards, progress meters, and actionable recommendations.
-  - [x] **Milestone 5.3: Security Role Simulation & Feedback Collection Forms**
-    - Role-based security access simulation (Guest, CX Manager, Operations Manager, Administrator).
-    - Review forms with validation and SQLite persistence.
-  - [x] **Milestone 5.4: Run History Audit Trail & Observability Dashboard**
-    - System Observability Panel with actual latency and projected LLM cost breakdown.
-    - Run execution history and global chronological feedback audit log.
-    - Historical run parameter restoration directly in sidebar.
-## ⚖️ Milestone 3A — Materiality & Change Detection Engine
+The prototype keeps key semantic definitions in configuration files rather than scattering them throughout the application.
 
-StoryProof's Materiality Engine is a deterministic analytical layer that acts as the first gate in decision intelligence: determining whether a KPI change is meaningful and whether there is sufficient history to analyze it.
+### `config/kpi_definitions.yaml`
 
-### Core Concepts
+Defines KPI semantics, units, thresholds, and lineage.
 
-1. **Business Materiality**: Determined by comparing the change against configured business thresholds from `kpi_definitions.yaml`. If the KPI change crosses the threshold, it is classified as `MATERIAL`; otherwise, it is `NOT_MATERIAL`.
-2. **Statistical Unusualness**: Measures whether a change is standard behavior or an anomaly relative to historical volatility. The engine builds a time series of baseline data grouped at the KPI's natural grain and computes the historical standard deviation. The standardized deviation of the comparison period value (Z-score) is calculated. If $|Z| \ge 2.0$, the change is flagged as `unusual`.
-3. **Isolation of Concepts**: Materiality and Statistical Unusualness are kept separate:
-   - **Material & Unusual** (e.g. CSAT): High confidence signal of meaningful shift.
-   - **Material & Not Unusual** (e.g. highly volatile metric crossing a low threshold): Shift crossed the business line but lies within normal historical variance.
-   - **Not Material & Unusual** (e.g. stable metric with a tiny shift): Statistically anomalous movement, but too small to matter to the business.
-4. **Natural KPI Grain Grouping**: Standard deviation calculations respect the KPI grain rather than raw transaction rows:
-   - *Daily* grain for AHT, FCR, Repeat Contact Rate, and AI Resolution Rate.
-   - *Weekly* grain for CSAT.
-   - *Monthly* grain for Retention Rate.
-5. **History Validation and Abstention**: The engine enforces the `minimum_history_days` contract. KPIs with sparse data (e.g., AI Resolution Rate with only 21 days out of 60 required) are marked as `INSUFFICIENT_HISTORY` and the engine abstains from making decisions.
-6. **No Causal Assumptions**: This layer is strictly quantitative. It reports numerical change facts, thresholds, and statistical significance. It does *not* query LLMs, read textual reports, or make causal inferences (e.g., it will not state that the AI rollout *caused* a CSAT decline).
+### `config/evidence_sources.yaml`
+
+Defines structured metadata for evidence sources.
+
+### `config/simulation_config.yaml`
+
+Defines simulation scenario metadata and rollout phases.
+
+The checked-in business datasets represent the validated demonstration scenario.
 
 ---
 
-## 🚀 Running the App (v0.1)
+## 22. Running the Application
 
-### 1. Set Up Environment
+### Step 1 — Create a virtual environment
+
 ```bash
 python -m venv .venv
-# On Windows (PowerShell):
+```
+
+### Step 2 — Activate the environment
+
+#### Windows PowerShell
+
+```powershell
 .venv\Scripts\Activate.ps1
-# On Linux/macOS:
+```
+
+#### Linux / macOS
+
+```bash
 source .venv/bin/activate
 ```
 
-### 2. Install Dependencies
+### Step 3 — Install dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Run Streamlit
+### Step 4 — Start the dashboard
+
 ```bash
 streamlit run app.py
 ```
 
----
-
-## 🔬 Milestone 3B.2 — Competing Hypothesis Analysis
-
-Milestone 3B.2 introduces a deterministic evidence-synthesis engine in `src/engine/hypotheses.py` to evaluate competing explanations for KPI shifts.
-
-### Core Concepts
-
-1. **Three Competing Hypotheses**:
-   - **Hypothesis 1 — AI Rollout Association**: Analyzes whether the AI rollout is consistently associated with operational changes across phases (Q1, April, May, June). Checks for direction consistency and evaluates relative differences. Bounded by Q1 zero-AI baseline safety checks.
-   - **Hypothesis 2 — CRM Cloud May-4 Patch**: Determines whether observed KPI movement was concentrated in CRM Cloud post-patch (`2026-05-04` through `2026-06-30`) compared with a control group of unaffected products. Computes a deterministic pre/post differential signal.
-   - **Hypothesis 3 — Mix Shift**: Measures the proportion of the KPI shift mathematically attributable to volume/exposure changes across segments using Shapley-style decomposition. Classifies mix share as `LOW` (< 20%), `MODERATE` (20-50%), or `HIGH` (>= 50%).
-2. **Ambiguity Handling**: Rather than choosing a single causal "winner" on observational data, StoryProof explicitly detects confounding. When multiple explanations (e.g. AI rollout and CRM patch) show moderate-to-strong associations or when CSAT cannot be split due to data limitations, the synthesis logic resolves to `INVESTIGATION_REQUIRED`.
-3. **Abstention & Safety Guards**: The engine abstains (returning `NOT_AVAILABLE`) if required columns/dimensions are missing, baseline periods have zero observations, control groups are absent, or CSAT/Retention are queried by `ai_assisted` (which they do not support).
-4. **Causality Policy**: Enforces non-causal verbs (`"associated with"`, `"consistent with"`, etc.) in all narrative signals and logs.
+The application opens the interactive StoryProof dashboard in the browser.
 
 ---
 
-## 📂 Milestone 3C.1 — Unstructured Evidence Ingestion & Provenance Layer
+## 23. Testing
 
-Milestone 3C.1 introduces a deterministic evidence-ingestion layer in `src/engine/evidence.py` to convert qualitative support chat transcripts, survey reviews, and contextual rollout reports into structured evidence records.
+Run the automated test suite with:
 
-### Core Concepts
+### Windows
 
-1. **Deterministic Parsing**:
-   - **Support Transcripts**: Splitted by block headers `[TRANSCRIPT - YYYY-MM-DD]`, extracting Date, Support ID, Agent, Customer Segment, and Product.
-   - **Customer Feedback Comments**: Splitted by comment headers `CSAT Survey Comment - `, extracting Date, Customer Segment, and Rating.
-   - **Rollout Status Report**: Parsed into discrete logical blocks representing Document Metadata, Executive Summary, Timeline & Adoption Schedule, and specific Operational Impact Metrics (including AHT, FCR, Repeat Contact, and Confounding CRM Cloud Patch details).
-2. **Provenance Preservation**: Every single record contains a structured `provenance` dictionary mapping it back to its original filename (`file`) and `source_key` from `evidence_sources.yaml`. The original text is preserved exactly without paraphrasing.
-3. **Deterministic ID Generation**: Reproducible IDs are generated using the `source_key_index` format, ensuring the same text files always yield the exact same evidence IDs.
-4. **Safety & Abstention**: Missing optional metadata fields (e.g., segment or product) default to `None` rather than fabricated values. File absence and empty files are handled safely by returning `NOT_AVAILABLE` status results.
-5. **No Causal Inference/LLMs**: Ingestion is strictly deterministic and read-only, laying the data provenance foundation for later qualitative verification. No sentiment analysis, semantic theme extraction, RAG, or causal assumptions are performed.
-
----
-
-## 📂 Milestone 3C.2 — Qualitative Evidence Retrieval & Linking Layer
-
-Milestone 3C.2 introduces a deterministic retrieval and linking layer in `src/engine/retrieval.py` to link qualitative evidence records to investigation findings.
-
-### Core Concepts
-
-1. **Deterministic Matching**: Filters and scores evidence records based on exact product and segment metadata alignment, target date windows, and complete word-boundary keyword checks.
-2. **Deterministic Relevance Scoring**: Computes a transparent, auditable score where:
-   - Exact Product Match = `+2.0`
-   - Exact Segment Match = `+2.0`
-   - Date Window Match = `+1.0`
-   - Distinct Keyword Match = `+1.0` per matched term (capped at `+3.0` maximum)
-   - Minimum Score Threshold = `1.0` (scores $< 1.0$ are excluded)
-3. **Abstention & Ordering**: Excludes mismatching metadata and out-of-range dates, returning `NO_MATCH` if no record meets the minimum score threshold. Results are deterministically sorted by relevance score descending, then evidence ID ascending.
-4. **Causality Safety**: Matches and reasons are generated using strictly observational, non-causal verbs, keeping provenance references preserved exactly.
-
----
-
-## 📂 Milestone 3C.3 — Qualitative & Quantitative Narrative Synthesis
-
-Milestone 3C.3 introduces a deterministic synthesis layer in `src/engine/synthesis.py` that formats materiality, driver, hypothesis, and qualitative findings into a fully traceable investigation report.
-
-### Core Concepts
-
-1. **Structured Narrative Schema**: Statements are formatted as structured dicts containing the narrative text, exactly one classification (`FACT`, `ASSOCIATION`, `HYPOTHESIS`, `CONTEXT`, `LIMITATION`), and references to structured findings (`structured_refs`) and qualitative evidence (`evidence_refs`).
-2. **Conflict & Tension Detection**: When structured metrics show efficiency gains but qualitative feedback reports unresolved issues, the layer detects and explicitly details the tension (e.g., AHT operational speedup vs. premature ticket closure complaints) rather than suppressing either finding.
-3. **Multi-KPI Synthesis**: Synthesizes findings across AHT, FCR, CSAT, Repeat Contact Rate, Retention Rate, and AI Resolution Rate while respecting their individual units, grains, thresholds, and insufficient history limitations.
-4. **Causality Safeguards & Disclaimer**: Implements a strict causality-language guard (verifying no causal verbs like "caused", "resulted in", or "driven by" are present in generated statements) and appends a mandatory **Causality Disclaimer**: `"The available evidence does not establish causality; observed changes represent associations and candidate explanations only."`
-5. **No Recalculation**: Preserves the exact values, statuses, and boundaries computed upstream in previous milestones (such as AI Resolution Rate's insufficient-history flag from 3A).
-
----
-
-## 🎯 Milestone 4 — Persona Views, Decision Readiness & Action Recommendations
-
-### Action Recommendation Schema
-Every recommendation produced by `src/engine/actions.py` is structured across 7 explicit operational dimensions:
-- **`driver` / `observed_finding`**: The observed KPI shift or evidence tension that triggered the action.
-- **`controllable_lever`**: The specific business lever or configuration under managerial control (e.g., *Bot Routing Rules*, *Software Release Isolation*, *Data Ingestion Window*).
-- **`action` / `title`**: The concrete operational instruction.
-- **`expected_impact`**: The non-causal anticipated operational outcome.
-- **`owner`**: Accountable manager persona (*Support Operations Manager* or *CX Manager*).
-- **`confidence`**: Conservative, evidence-derived confidence class (*`LOW_BASELINE_CONFIDENCE`*, *`MODERATE_ASSOCIATION`*, *`HIGH_TENSION_RISK`*, *`VERIFIED_READY`*).
-- **`monitoring_plan`**: Specific leading indicators and cadence to monitor post-intervention.
-
-### Action Types & Rules Engine
-1. `STABILIZE_BASELINE`: Triggered when insufficient historical data exists (e.g., sparse AI Resolution Rate). Defer scaling and monitor volume.
-2. `SYSTEM_PATCH`: Triggered when confounding events coincide (e.g., CRM Cloud May patch). Isolate segment telemetry before attribution.
-3. `RESOLUTION_GUARDRAIL`: Triggered when efficiency gains tension with customer dissatisfaction. Enforce auto-closure checks.
-4. `OPERATIONAL_OPTIMIZATION`: Triggered only under verified improvements with zero active risk flags.
-
----
-
-## 🏛️ Human-in-the-Loop Governance Loop
-
-StoryProof incorporates a lightweight, deterministic feedback loop via SQLite (`data/storyproof_audit.db`):
-- **Deterministic Aggregation**: When action recommendations are evaluated, `get_action_governance_signal()` aggregates prior analyst reviews (`APPROVED`, `REJECTED`, `FLAGGED`) for each specific `action_id`.
-- **Governance Signals**:
-  - `NO_PRIOR_FEEDBACK`: Neutral default signal when no historical reviews exist.
-  - `HIGH_HISTORICAL_ACCEPTANCE`: $\ge 70\%$ historical approval rate across reviews.
-  - `FREQUENTLY_REJECTED`: $\ge 50\%$ historical rejection rate.
-  - `FREQUENTLY_FLAGGED`: Dominant flagged reviews requiring heightened oversight.
-  - `MIXED_FEEDBACK`: Dispersed review ratings.
-- **Strict Evidence Separation**: Historical analyst acceptance score is displayed alongside current recommendation confidence without overwriting or confounding underlying data facts.
-
----
-
-## 📊 Telemetry & Observability: Actual vs. Simulated
-
-The system provides an administrator observability panel separating real runtime metrics from economic projections:
-- **Actual Telemetry**:
-  - Exact deterministic engine execution latency (measured via monotonic clock).
-  - SQLite database record count and execution run query times.
-  - Active execution run IDs and parameter state.
-- **Simulated Telemetry**:
-  - Hypothetical LLM token consumption model (8,500 input tokens, 1,200 output tokens per run).
-  - Enterprise cost projections ($0.005 / 1k input tokens, $0.015 / 1k output tokens) to illustrate production unit economics if LLM narrative expansion were enabled.
-
----
-
-## 🧪 Verification & Standalone Scripts
-
-### Running Automated Test Suite
-```bash
-# Run full suite (214 tests)
+```powershell
 .venv\Scripts\python.exe -m pytest tests/ -q
 ```
 
-### Running Data Audit & Validation Scripts
-When invoking standalone scripts from the command line, ensure `PYTHONPATH` includes the workspace root so modules in `src/` are properly resolved:
+### Linux / macOS
+
+```bash
+python -m pytest tests/ -q
+```
+
+The latest project validation run reported **226 passing tests** across the analytical, evidence, governance, dashboard, and integration layers.
+
+---
+
+## 24. Authoritative Data Validation
+
+The repository includes a validation utility covering the business-data and semantic checks used by the prototype.
+
+### Windows PowerShell
 
 ```powershell
-# Windows PowerShell:
 $env:PYTHONPATH="."
 .venv\Scripts\python.exe scripts/validate_data.py
 ```
 
+### Linux / macOS
+
 ```bash
-# Linux / macOS:
 export PYTHONPATH=.
 python scripts/validate_data.py
 ```
+
+The validation workflow checks:
+
+- Dataset structure
+- KPI semantic contracts
+- Expected business patterns
+- Evidence-layer consistency
+- Historical sufficiency
+- Materiality inputs
+
+---
+
+## 25. Validation Snapshot
+
+The latest validated scenario contains:
+
+- `support_daily.csv`: 27,539 rows
+- `cx_weekly.csv`: 972 rows
+- `crm_monthly.csv`: 72 rows
+- `ai_resolution_rate.csv`: 252 rows
+- AI Resolution Rate unique calendar days: 21
+
+Representative analytical results:
+
+- AHT: material change
+- FCR: not material
+- CSAT: material change
+- Repeat Contact Rate: material change
+- Retention Rate: material change
+- AI Resolution Rate: insufficient history
+
+The validation also confirms the intended business pattern: a major efficiency improvement occurs alongside deterioration in several customer-facing outcomes.
+
+---
+
+## 26. Design Principles
+
+StoryProof follows several principles throughout the implementation.
+
+### Evidence before explanation
+
+A plausible story is treated as a hypothesis until evidence supports it.
+
+### Determinism before generation
+
+The analytical core relies on explicit calculations and rules rather than requiring a generative model.
+
+### Abstention is valid
+
+Insufficient data or unresolved ambiguity should prevent overconfident conclusions.
+
+### Causality must be earned
+
+Temporal overlap or correlation alone does not establish causality.
+
+### Governance is separate from truth
+
+Human feedback affects governance treatment, not the underlying KPI facts.
+
+### Recommendations require gates
+
+A recommendation should be tied to a defined evidence state and operational owner.
+
+### Traceability matters
+
+Analytical outputs should be traceable to data, evidence, rules, and execution history.
+
+---
+
+## 27. Intended Demo Narrative
+
+The StoryProof demonstration is designed around one central question:
+
+> **"AHT improved by more than 40%. Should we celebrate the rollout and scale it?"**
+
+A conventional dashboard could stop at the improvement.
+
+StoryProof continues:
+
+1. Detects the large AHT improvement.
+2. Checks other customer-facing KPIs.
+3. Surfaces the CSAT and Repeat Contact deterioration.
+4. Examines competing explanations.
+5. Retrieves supporting qualitative evidence.
+6. Detects the cross-KPI tension.
+7. Checks decision readiness.
+8. Abstains where history is insufficient.
+9. Gates the resulting operational recommendation.
+10. Records the execution and governance context.
+
+This turns a dashboard from a reporting surface into an **evidence-verification workflow**.
+
+---
+
+## 28. Project Scope
+
+### Implemented in the prototype
+
+- Interactive Streamlit dashboard
+- KPI semantic contracts
+- Materiality analysis
+- Driver decomposition
+- Competing hypotheses
+- Confounder handling
+- Unstructured evidence ingestion
+- Evidence retrieval
+- Narrative synthesis
+- Cross-KPI tension detection
+- Decision-readiness scoring
+- Evidence-gated action recommendations
+- Persona views
+- Role and entitlement simulation
+- Analyst feedback
+- Governance aggregation
+- Execution audit history
+- Runtime observability
+
+### Potential production evolution
+
+The prototype can later be extended with enterprise infrastructure such as:
+
+- SSO/IAM integration
+- Production data connectors
+- Enterprise metadata catalogs
+- More advanced statistical testing
+- Production-grade vector or semantic retrieval
+- Optional governed generative-language assistance
+- Enterprise observability and monitoring
+
+These are future production considerations, not dependencies of the current prototype.
+
+---
+
+## 29. Technology Stack
+
+- **Python**
+- **Streamlit**
+- **Pandas**
+- **NumPy**
+- **Plotly**
+- **PyYAML**
+- **SQLite**
+- **Pytest**
+
+The architecture intentionally keeps the analytical core lightweight and inspectable.
+
+---
+
+## 30. Project Status
+
+StoryProof is a working hackathon prototype demonstrating an evidence-first approach to Business Intelligence.
+
+The project is focused on the distinction between:
+
+**"What changed?"**
+
+and
+
+**"Is the story we are telling about that change actually supported by the available evidence?"**
+
+That distinction is the foundation of StoryProof.
+
+---
+
+## 31. Challenge Context
+
+**Accenture Innovation Challenge 2026**
+
+**Track:** 3 — BusinessIntelligence.ai
+
+**StoryProof tagline:**
+
+> **"Don't just tell the story. Verify it."**
