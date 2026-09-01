@@ -613,3 +613,115 @@ def test_hardened_action_recommendation_schema():
             assert len(act["action"]) > 0
             assert len(act["expected_impact"]) > 0
             assert len(act["monitoring_plan"]) > 0
+
+# 26. Evidence-chain: Retention_Rate must NOT receive SYSTEM_PATCH without CRM Patch hypothesis evidence
+def test_retention_rate_no_crm_patch_without_hypothesis():
+    """Regression: ACT_CX_MANAGER_PATCH_Retention_Rate must not be generated
+    when the synthesis payload contains no Retention_Rate_crm_hypothesis ref."""
+    mock_syn = get_clean_mock_synthesis()
+    # Make Retention_Rate material
+    mock_syn["report"][0]["statements"].append({
+        "text": "Retention_Rate changed from 0.9559 to 0.9449 (absolute change: -0.0110).",
+        "classification": "FACT",
+        "structured_refs": ["Retention_Rate_materiality"],
+        "evidence_refs": []
+    })
+    mock_syn["report"][1]["statements"].append({
+        "text": "Retention_Rate registered a material decrease based on configured materiality thresholds.",
+        "classification": "FACT",
+        "structured_refs": ["Retention_Rate_materiality"],
+        "evidence_refs": []
+    })
+    # Add CRM patch hypothesis for AHT ONLY (not for Retention_Rate)
+    mock_syn["report"][2]["statements"] = [
+        {
+            "text": "AI rollout hypothesis exhibits STRONG_ASSOCIATION with AHT shifts.",
+            "classification": "ASSOCIATION",
+            "structured_refs": ["AHT_ai_hypothesis"],
+            "evidence_refs": []
+        },
+        {
+            "text": "CRM patch hypothesis exhibits MODERATE_ASSOCIATION with AHT shifts.",
+            "classification": "ASSOCIATION",
+            "structured_refs": ["AHT_crm_hypothesis"],
+            "evidence_refs": ["crm_report_1"]
+        }
+    ]
+    # Add ambiguity trigger (high_ambiguity will be True)
+    mock_syn["report"].append({
+        "title": "Investigation Conclusion",
+        "statements": [{
+            "text": "LIMITATION: Available data does not determine the primary explanation.",
+            "classification": "LIMITATION",
+            "structured_refs": ["AHT_ai_hypothesis"],
+            "evidence_refs": []
+        }]
+    })
+
+    views = generate_persona_views(mock_syn)
+    res = generate_action_recommendations(mock_syn, views)
+
+    # Retention_Rate must NOT have a SYSTEM_PATCH action
+    cx_actions = res["persona_actions"]["CX_MANAGER"]
+    retention_patch = [a for a in cx_actions if a["action_type"] == "SYSTEM_PATCH" and "Retention" in a["id"]]
+    assert len(retention_patch) == 0, (
+        f"Retention_Rate received unsupported CRM Patch action without hypothesis evidence: {retention_patch}"
+    )
+
+# 27. Evidence-chain: Supported KPIs retain CRM Patch when hypothesis evidence exists
+def test_supported_kpis_retain_crm_patch_with_evidence():
+    """AHT, FCR, Repeat_Contact_Rate must still receive SYSTEM_PATCH
+    when CRM Patch hypothesis evidence is present in structured_refs."""
+    mock_syn = get_clean_mock_synthesis()
+    # Add CRM hypothesis statements with proper structured_refs for three supported KPIs
+    mock_syn["report"][2]["statements"] = [
+        {
+            "text": "CRM patch hypothesis exhibits STRONG_ASSOCIATION with AHT shifts.",
+            "classification": "ASSOCIATION",
+            "structured_refs": ["AHT_crm_hypothesis"],
+            "evidence_refs": ["crm_report_1"]
+        },
+        {
+            "text": "CRM patch hypothesis exhibits MODERATE_ASSOCIATION with FCR shifts.",
+            "classification": "ASSOCIATION",
+            "structured_refs": ["FCR_crm_hypothesis"],
+            "evidence_refs": ["crm_report_2"]
+        },
+        {
+            "text": "CRM patch hypothesis exhibits MODERATE_ASSOCIATION with Repeat_Contact_Rate shifts.",
+            "classification": "ASSOCIATION",
+            "structured_refs": ["Repeat_Contact_Rate_crm_hypothesis"],
+            "evidence_refs": []
+        }
+    ]
+
+    views = generate_persona_views(mock_syn)
+    res = generate_action_recommendations(mock_syn, views)
+    all_actions = []
+    for p_acts in res["persona_actions"].values():
+        all_actions.extend(p_acts)
+
+    # AHT should get SYSTEM_PATCH (present in OPS scope)
+    assert any(a["action_type"] == "SYSTEM_PATCH" and "AHT" in a["id"] for a in all_actions), \
+        "AHT should retain CRM Patch action when hypothesis evidence exists"
+    # FCR should get SYSTEM_PATCH (present in both scopes)
+    assert any(a["action_type"] == "SYSTEM_PATCH" and "FCR" in a["id"] for a in all_actions), \
+        "FCR should retain CRM Patch action when hypothesis evidence exists"
+    # Repeat_Contact_Rate should get SYSTEM_PATCH (present in both scopes)
+    assert any(a["action_type"] == "SYSTEM_PATCH" and "Repeat_Contact" in a["id"] for a in all_actions), \
+        "Repeat_Contact_Rate should retain CRM Patch action when hypothesis evidence exists"
+
+# 28. Evidence-chain: Real pipeline must not produce SYSTEM_PATCH for Retention_Rate
+def test_real_pipeline_no_retention_crm_patch():
+    """End-to-end: the real pipeline with actual data must not produce
+    a CRM Patch action for Retention_Rate."""
+    real_synthesis = generate_synthesis_report("data")
+    views = generate_persona_views(real_synthesis)
+
+    for persona_name, persona_data in views["personas"].items():
+        actions = persona_data.get("recommended_actions", [])
+        for act in actions:
+            if act["action_type"] == "SYSTEM_PATCH":
+                assert "Retention" not in act["id"], (
+                    f"Real pipeline produced unsupported CRM Patch action for Retention_Rate: {act['id']}"
+                )

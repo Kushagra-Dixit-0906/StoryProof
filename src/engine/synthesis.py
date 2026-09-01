@@ -343,12 +343,46 @@ def generate_synthesis_report(data_dir, kpi_config_path="config/kpi_definitions.
 
     # SECTION 10: Investigation Conclusion
     sec10 = []
-    add_statement(
-        sec10,
-        "FACT: Operational metrics show AHT decreased materially and Repeat Contact Rates rose materially, whereas FCR and Retention Rates registered non-material changes.",
-        "FACT",
-        structured_refs=["AHT_materiality", "Repeat_Contact_Rate_materiality", "FCR_materiality", "Retention_Rate_materiality"]
-    )
+    # Derive investigation conclusion from authoritative materiality results
+    _kpi_labels = {"AHT": "AHT", "FCR": "FCR", "CSAT": "CSAT",
+                   "Repeat_Contact_Rate": "Repeat Contact Rates",
+                   "Retention_Rate": "Retention Rates",
+                   "AI_Resolution_Rate": "AI Resolution Rate"}
+    _mat_dec, _mat_inc, _non_mat, _concl_refs = [], [], [], []
+    for k in kpis:
+        _r = mat_results.get(k, {})
+        _st = _r.get("status")
+        _label = _kpi_labels.get(k, k)
+        if _st == "MATERIAL":
+            _concl_refs.append(f"{k}_materiality")
+            if _r.get("change", {}).get("absolute", 0) < 0:
+                _mat_dec.append(_label)
+            else:
+                _mat_inc.append(_label)
+        elif _st in ["NOT_MATERIAL", "NON_MATERIAL"]:
+            _concl_refs.append(f"{k}_materiality")
+            _non_mat.append(_label)
+
+    def _join_labels(names):
+        if len(names) <= 2:
+            return " and ".join(names)
+        return ", ".join(names[:-1]) + ", and " + names[-1]
+
+    _segments = []
+    if _mat_dec:
+        _segments.append(f"{_join_labels(_mat_dec)} decreased materially")
+    if _mat_inc:
+        _segments.append(f"{_join_labels(_mat_inc)} rose materially")
+    _mat_part = " and ".join(_segments)
+
+    if _mat_part and _non_mat:
+        _concl_text = f"FACT: Operational metrics show {_mat_part}, whereas {_join_labels(_non_mat)} registered non-material changes."
+    elif _mat_part:
+        _concl_text = f"FACT: Operational metrics show {_mat_part}."
+    else:
+        _concl_text = "FACT: KPI materiality assessment is pending."
+
+    add_statement(sec10, _concl_text, "FACT", structured_refs=sorted(_concl_refs))
     add_statement(
         sec10,
         "ASSOCIATION: The AHT drop is associated with the automated assistant rollout, while the CSAT drop and Repeat Contact spike coincide with both the assistant rollout and the CRM Cloud patch.",

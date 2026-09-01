@@ -328,3 +328,58 @@ def test_regression_3c2():
     query = {"product": "CRM Cloud", "kpi": "AHT"}
     res = retrieve_evidence(query, DATA_DIR, CONFIG_PATH)
     assert res["status"] == "SUCCESS"
+
+# Test 27: Synthesis must not describe Retention_Rate as non-material when materiality engine says MATERIAL
+def test_synthesis_retention_materiality_consistency(real_kpi_config):
+    """Regression: Retention_Rate is MATERIAL per the authoritative materiality engine.
+    No synthesis statement should describe it as non-material."""
+    # Confirm the authoritative materiality result
+    mat_res = analyze_kpi_change("Retention_Rate", real_kpi_config, DATA_DIR,
+                                  ("2026-01-01", "2026-03-31"), ("2026-06-01", "2026-06-30"))
+    assert mat_res["status"] == "MATERIAL", "Precondition: Retention_Rate must be MATERIAL"
+    assert mat_res["materiality"]["crossed"] is True
+
+    # Generate synthesis and verify consistency
+    res = generate_synthesis_report(DATA_DIR, KPI_CONFIG_PATH, CONFIG_PATH)
+    assert res["status"] == "SUCCESS"
+    for sec in res["report"]:
+        for s in sec["statements"]:
+            text_lower = s["text"].lower()
+            # Check if Retention appears in the non-material clause
+            # (after "whereas"), not just co-occurrence in the sentence
+            if "non-material" in text_lower:
+                non_mat_clause = text_lower.split("whereas")[-1] if "whereas" in text_lower else text_lower
+                if "retention" in non_mat_clause:
+                    pytest.fail(
+                        f"Synthesis contradicts materiality engine for Retention_Rate: '{s['text']}'"
+                    )
+
+# Test 28: Investigation Conclusion must derive materiality language from engine results
+def test_investigation_conclusion_data_driven():
+    """The Investigation Conclusion fact sentence must derive materiality
+    classification from the authoritative materiality engine, not hard-code it."""
+    res = generate_synthesis_report(DATA_DIR, KPI_CONFIG_PATH, CONFIG_PATH)
+    assert res["status"] == "SUCCESS"
+
+    # Find the Investigation Conclusion section
+    concl_section = None
+    for sec in res["report"]:
+        if sec["title"] == "Investigation Conclusion":
+            concl_section = sec
+            break
+    assert concl_section is not None, "Investigation Conclusion section must exist"
+
+    # The first statement should be the FACT about materiality
+    fact_stmt = concl_section["statements"][0]
+    assert fact_stmt["classification"] == "FACT"
+
+    # Retention_Rate is MATERIAL and declined: must appear as "decreased materially"
+    text_lower = fact_stmt["text"].lower()
+    assert "retention" in text_lower, "Retention must be mentioned in conclusion"
+    assert "decreased materially" in text_lower or "material" in text_lower, \
+        f"Retention must be classified as material in conclusion: '{fact_stmt['text']}'"
+    # Must NOT place Retention in the non-material clause
+    if "whereas" in text_lower and "non-material" in text_lower:
+        non_mat_clause = text_lower.split("whereas")[-1]
+        assert "retention" not in non_mat_clause, \
+            f"Conclusion places Retention in non-material clause: '{fact_stmt['text']}'"

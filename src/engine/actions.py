@@ -198,6 +198,18 @@ def generate_action_recommendations(synthesis_result, persona_views):
         # ----------------------------------------------------------------------
         # Triggered if high_ambiguity or when patch/confounder is associated in upstream report
         # Collect KPIs in scope that are associated with confounding patch or have high ambiguity
+        #
+        # Evidence-first gate: identify KPIs for which the hypothesis engine
+        # actually established CRM Patch analysis.  The authoritative signal is
+        # a structured_ref "{kpi}_crm_hypothesis" present in the synthesis
+        # payload — produced only when analyze_crm_patch() returned a
+        # meaningful result for the KPI.
+        kpis_with_crm_hypothesis = set()
+        for stmt in all_statements:
+            for ref in stmt["structured_refs"]:
+                if ref.endswith("_crm_hypothesis"):
+                    kpis_with_crm_hypothesis.add(ref[:-len("_crm_hypothesis")])
+
         confounded_kpis = []
         for kpi in kpi_scope:
             kpi_pat = kpi.replace("_", " ").lower()
@@ -229,7 +241,7 @@ def generate_action_recommendations(synthesis_result, persona_views):
                             if ref not in kpi_evidence_refs:
                                 kpi_evidence_refs.append(ref)
             
-            if is_confounded or (high_ambiguity and kpi in material_kpis):
+            if kpi in kpis_with_crm_hypothesis and (is_confounded or (high_ambiguity and kpi in material_kpis)):
                 confounded_kpis.append((kpi, kpi_stmt_refs, kpi_evidence_refs))
 
         for kpi, s_refs, e_refs in confounded_kpis:
