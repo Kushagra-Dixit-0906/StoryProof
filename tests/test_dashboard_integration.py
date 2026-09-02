@@ -17,7 +17,8 @@ from app import (
     resolve_execution_run_id,
     get_accessible_kpis,
     check_kpi_access,
-    load_kpi_time_series
+    load_kpi_time_series,
+    get_decision_view_title
 )
 
 # Import feedback functions
@@ -699,3 +700,39 @@ def test_role_aware_dashboard_computation_flow():
     # Verify that the calculation loop iterates over entitled_kpis, not all_kpis
     assert "for k in entitled_kpis:" in app_code
     assert "for k in all_kpis:" not in app_code
+
+def test_decision_view_title_by_role():
+    """
+    Verifies that get_decision_view_title() returns distinct, accurate titles for each role:
+      - 'CX Manager' -> 'CX Manager'
+      - 'Operations Manager' -> 'Operations Manager'
+      - 'Guest' -> 'Guest-Restricted Decision View'
+      - 'Administrator' -> 'Administrator / Governance View'
+    """
+    assert get_decision_view_title("CX Manager") == "CX Manager"
+    assert get_decision_view_title("Operations Manager") == "Operations Manager"
+    assert get_decision_view_title("Guest") == "Guest-Restricted Decision View"
+    assert get_decision_view_title("Administrator") == "Administrator / Governance View"
+    # Fallback for arbitrary role
+    assert get_decision_view_title("Auditor") == "Auditor"
+
+def test_admin_decision_view_mismatch_regression():
+    """
+    Regression test ensuring that when user_role is 'Administrator', the dashboard
+    displays 'Administrator / Governance View' and does NOT silently reuse or display
+    'CX Manager' as the Current Decision View title.
+    """
+    with open("app.py", "r", encoding="utf-8") as f:
+        app_code = f.read()
+
+    # 1. Verify get_decision_view_title is called on user_role
+    assert "decision_view_title = get_decision_view_title(user_role)" in app_code
+
+    # 2. Verify markdown renders decision_view_title instead of hardcoded/silent CX Manager
+    assert "st.markdown(f\"### 👤 Current Decision View: **{decision_view_title}**\")" in app_code
+
+    # 3. Verify Administrator title is distinct from CX Manager
+    admin_title = get_decision_view_title("Administrator")
+    cx_title = get_decision_view_title("CX Manager")
+    assert admin_title == "Administrator / Governance View"
+    assert admin_title != cx_title

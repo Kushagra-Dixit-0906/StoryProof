@@ -344,6 +344,24 @@ def check_kpi_access(role, kpi_name, kpi_definitions):
     accessible_kpis = get_accessible_kpis(role, kpi_definitions)
     return kpi_name in accessible_kpis
 
+def get_decision_view_title(role):
+    """
+    Returns the appropriate Current Decision View title string based on the user's role:
+      - 'CX Manager' -> 'CX Manager'
+      - 'Operations Manager' -> 'Operations Manager'
+      - 'Guest' -> 'Guest-Restricted Decision View'
+      - 'Administrator' -> 'Administrator / Governance View'
+    """
+    if role == "CX Manager":
+        return "CX Manager"
+    elif role == "Operations Manager":
+        return "Operations Manager"
+    elif role == "Guest":
+        return "Guest-Restricted Decision View"
+    elif role == "Administrator":
+        return "Administrator / Governance View"
+    return role
+
 def get_evidence_provenance_badge(refs):
     """
     Derives transparent provenance, freshness, and analytical method metadata for a list of references.
@@ -743,23 +761,38 @@ def main():
         # ------------------------------------------------------------------------------
         st.write("---")
 
-        # Determine persona key based on selected role
+        # Determine persona key and decision view title based on selected role
         p_key = None
+        decision_view_title = get_decision_view_title(user_role)
+
         if user_role == "CX Manager":
             p_key = "CX_MANAGER"
+            caption_text = "Role Access: **CX Manager** | Tailored narrative synthesis and operational action guidance for CX Manager."
         elif user_role == "Operations Manager":
             p_key = "OPERATIONS_MANAGER"
-        elif user_role in ["Guest", "Administrator"]:
-            # Dropdown/Selector inside the StoryProof Tab to inspect different persona viewpoints
-            persona_choice = st.radio("Select Decision Perspective to Inspect", ["CX Manager Perspective", "Operations Manager Perspective"], key="persona_view_profile_choice")
-            if persona_choice == "CX Manager Perspective":
-                p_key = "CX_MANAGER"
-            else:
-                p_key = "OPERATIONS_MANAGER"
+            caption_text = "Role Access: **Operations Manager** | Tailored narrative synthesis and operational action guidance for Operations Manager."
+        elif user_role == "Guest":
+            caption_text = "Role Access: **Guest** | Read-only inspection of persona decision perspectives. Feedback submission is disabled."
+            persona_choice = st.radio(
+                "Select Decision Perspective to Inspect (Read-Only)",
+                ["CX Manager Perspective", "Operations Manager Perspective"],
+                key="persona_view_profile_choice"
+            )
+            p_key = "CX_MANAGER" if persona_choice == "CX Manager Perspective" else "OPERATIONS_MANAGER"
+        elif user_role == "Administrator":
+            caption_text = "Role Access: **Administrator** | Governance oversight across all 6 KPIs, persona decision perspectives, and operational actions."
+            persona_choice = st.radio(
+                "Select Persona Perspective for Governance Review",
+                ["CX Manager Perspective", "Operations Manager Perspective"],
+                key="persona_view_profile_choice"
+            )
+            p_key = "CX_MANAGER" if persona_choice == "CX Manager Perspective" else "OPERATIONS_MANAGER"
+        else:
+            p_key = "CX_MANAGER"
+            caption_text = f"Role Access: **{user_role}**."
 
-        persona_display_name = "CX Manager" if p_key == "CX_MANAGER" else "Operations Manager"
-        st.markdown(f"### 👤 Current Decision View: **{persona_display_name}**")
-        st.caption(f"Role Access: **{user_role}** | Tailored narrative synthesis and operational action guidance for {persona_display_name}.")
+        st.markdown(f"### 👤 Current Decision View: **{decision_view_title}**")
+        st.caption(caption_text)
 
         # Check synthesis and persona views status
         if synthesis_result.get("status") != "SUCCESS" or persona_views.get("status") != "SUCCESS":
