@@ -153,65 +153,23 @@ def load_kpi_time_series(kpi_name, kpi_definitions, data_dir, role=None):
     if not date_col or date_col not in df.columns:
         return None
 
-    df_copy = df.copy()
     try:
-        df_copy['date_parsed'] = pd.to_datetime(df_copy[date_col])
-    except (ValueError, TypeError, KeyError):
-        return None
+        # Group by date column and compute authoritative volume-weighted KPI value per date
+        records = []
+        for date_val, group in df.groupby(date_col):
+            kpi_val = calculate_kpi_value(group, kpi_name, kpi_def)
+            if kpi_val is not None:
+                records.append({
+                    "date": pd.to_datetime(date_val),
+                    "value": float(kpi_val)
+                })
 
-    # Calculate row-wise values based on contract
-    agg_method = kpi_def.get("aggregation_method", "weighted_average")
-    num_field = kpi_def.get("numerator_field")
-    den_field = kpi_def.get("denominator_field")
-
-    # 1. Special Case: CSAT
-    if kpi_name == "CSAT" and agg_method == "weighted_average":
-        if "csat_score" not in df_copy.columns:
-            return None
-        df_copy['value'] = df_copy["csat_score"]
-    # 2. General Weighted Average / Ratio-based KPIs
-    elif agg_method == "weighted_average" and num_field in df_copy.columns and den_field in df_copy.columns:
-        # Compute row-wise ratio
-        df_copy['value'] = df_copy[num_field] / df_copy[den_field]
-        df_copy['value'] = df_copy['value'].fillna(0.0)
-
-        # Unit Conversions
-        raw_unit = kpi_def.get("raw_unit")
-        display_unit = kpi_def.get("display_unit")
-        if raw_unit == "seconds" and display_unit == "minutes":
-            df_copy['value'] /= 60.0
-    else:
-        # Simple column fallback
-        val_col = kpi_def.get("value_column", kpi_name)
-        col_to_use = None
-        col_candidates = [val_col, kpi_name, kpi_name.lower(), "val", "value", "score", "rate", "resolution_rate"]
-        for candidate in col_candidates:
-            if candidate and candidate in df_copy.columns:
-                col_to_use = candidate
-                break
-        if col_to_use is None:
-            # Look for any numeric col
-            for col in df_copy.columns:
-                if col not in ["date", "date_parsed", "week_start", "month"] and pd.api.types.is_numeric_dtype(df_copy[col]):
-                    col_to_use = col
-                    break
-        if col_to_use is None:
+        if not records:
             return None
 
-        df_copy['value'] = df_copy[col_to_use]
-        # Scale resolution_rate
-        if kpi_def.get("display_unit") == "percentage" and df_copy['value'].mean() > 1.0:
-            df_copy['value'] /= 100.0
-
-    # Clean output DataFrame
-    try:
-        res_df = df_copy[['date_parsed', 'value']].copy()
-        res_df.columns = ['date', 'value']
-        res_df = res_df.dropna()
-        # Aggregate intra-day slices by date so each unique date has a consolidated mean value
-        res_df = res_df.groupby('date', as_index=False)['value'].mean().sort_values('date')
+        res_df = pd.DataFrame(records).sort_values("date").reset_index(drop=True)
         return res_df
-    except (KeyError, ValueError, TypeError):
+    except (KeyError, ValueError, TypeError, ZeroDivisionError, pd.errors.ParserError, OSError):
         return None
 
 def build_trend_chart(kpi_name, kpi_df, baseline_period, comparison_period, show_shading=True):
@@ -587,51 +545,61 @@ def main():
         cols = st.columns(len(row1))
         for idx, k in enumerate(row1):
             stats = kpi_stats.get(k, {})
+            k_label = kpi_definitions.get(k, {}).get("name", k.replace("_", " "))
             with cols[idx]:
                 if stats.get("status") == "ERROR" or "baseline" not in stats:
-                    st.metric(k, "N/A", delta="No data")
+                    st.metric(k_label, "N/A", delta="No data")
                 else:
                     val_base = stats["baseline"]["value"]
                     val_comp = stats["comparison"]["value"]
                     if val_comp is None or val_base is None:
-                        st.metric(k, "N/A", delta="No data")
+                        st.metric(k_label, "N/A", delta="No data")
                     else:
                         unit = kpi_definitions[k].get("display_unit", "")
                         if unit == "percentage":
-                            val_show = f"{val_comp * 100:.1f}%" if k != "CSAT" else f"{val_comp:.1f}%"
+                            val_show = f"{val_comp * 100:.1f}%" if k != "CSAT" else f"{val_comp:.1f} pts"
                             diff = val_comp - val_base
-                            diff_show = f"{diff * 100:+.1f}%" if k != "CSAT" else f"{diff:+.1f}%"
+                            diff_show = f"{diff * 100:+.1f}%" if k != "CSAT" else f"{diff:+.1f} pts"
                         else:
                             val_show = f"{val_comp:.2f}"
                             diff = val_comp - val_base
                             diff_show = f"{diff:+.2f}"
-                        st.metric(k, val_show, delta=diff_show)
+                        st.metric(k_label, val_show, delta=diff_show)
 
-        # Second row (if more than 3 entitled KPIs)
+        # Second row (if more than 3 entitled KPIs, visually centered for 2 cards)
         row2 = scorecard_kpis[3:]
         if row2:
-            cols2 = st.columns(len(row2))
+            if len(row2) == 2:
+                cols2 = st.columns([1, 2, 2, 1])
+                target_cols = [cols2[1], cols2[2]]
+            elif len(row2) == 1:
+                cols2 = st.columns([1, 2, 1])
+                target_cols = [cols2[1]]
+            else:
+                target_cols = st.columns(len(row2))
+
             for idx, k in enumerate(row2):
                 stats = kpi_stats.get(k, {})
-                with cols2[idx]:
+                k_label = kpi_definitions.get(k, {}).get("name", k.replace("_", " "))
+                with target_cols[idx]:
                     if stats.get("status") == "ERROR" or "baseline" not in stats:
-                        st.metric(k, "N/A", delta="No data")
+                        st.metric(k_label, "N/A", delta="No data")
                     else:
                         val_base = stats["baseline"]["value"]
                         val_comp = stats["comparison"]["value"]
                         if val_comp is None or val_base is None:
-                            st.metric(k, "N/A", delta="No data")
+                            st.metric(k_label, "N/A", delta="No data")
                         else:
                             unit = kpi_definitions[k].get("display_unit", "")
                             if unit == "percentage":
-                                val_show = f"{val_comp * 100:.1f}%"
+                                val_show = f"{val_comp * 100:.1f}%" if k != "CSAT" else f"{val_comp:.1f} pts"
                                 diff = val_comp - val_base
-                                diff_show = f"{diff * 100:+.1f}%"
+                                diff_show = f"{diff * 100:+.1f}%" if k != "CSAT" else f"{diff:+.1f} pts"
                             else:
                                 val_show = f"{val_comp:.2f}"
                                 diff = val_comp - val_base
                                 diff_show = f"{diff:+.2f}"
-                            st.metric(k, val_show, delta=diff_show)
+                            st.metric(k_label, val_show, delta=diff_show)
 
     # 3. Dual-View Presentation
     st.write("---")
@@ -688,7 +656,7 @@ def main():
         # Selected KPI Authoritative Context Card
         selected_stats = kpi_stats.get(selected_kpi_proof, {})
         if selected_stats.get("status") == "INSUFFICIENT_HISTORY":
-            hist_eval = selected_stats.get("history_evaluation", {})
+            hist_eval = selected_stats.get("history", {}) or selected_stats.get("history_evaluation", {})
             avail_d = hist_eval.get("available_days", 21)
             req_d = hist_eval.get("required_days", 60)
             st.warning(
@@ -700,7 +668,7 @@ def main():
             val_base = selected_stats.get("baseline", {}).get("value")
             chg = selected_stats.get("change", {})
             abs_chg = chg.get("absolute", 0.0)
-            rel_chg = chg.get("relative", 0.0)
+            rel_chg = chg.get("relative_percent", chg.get("relative", 0.0))
             z_val = selected_stats.get("statistical_signal", {}).get("z_score")
             mat_stat = selected_stats.get("status")
 

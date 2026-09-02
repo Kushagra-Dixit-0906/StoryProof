@@ -81,7 +81,9 @@ def calculate_kpi_value(df, kpi_name, kpi_def):
         return val
 
     # 3. Fallback: Simple column average
+    val_col = kpi_def.get("value_column")
     col_candidates = [
+        val_col,
         kpi_name,
         kpi_name.lower(),
         kpi_name.replace("_", " ").lower(),
@@ -94,7 +96,7 @@ def calculate_kpi_value(df, kpi_name, kpi_def):
     ]
     col_to_use = None
     for candidate in col_candidates:
-        if candidate in df.columns:
+        if candidate and candidate in df.columns:
             col_to_use = candidate
             break
             
