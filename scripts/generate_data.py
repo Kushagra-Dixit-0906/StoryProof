@@ -1,13 +1,22 @@
 import os
+import yaml
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-def main():
-    # 1. Setup paths and seed
-    np.random.seed(42)
+def main(data_dir="data", config_path="config/simulation_config.yaml"):
+    # 1. Setup paths and seed from simulation configuration
+    seed = 42
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                sim_config = yaml.safe_load(f)
+                seed = sim_config.get("simulation_metadata", {}).get("random_seed", 42)
+        except Exception:
+            seed = 42
+
+    rng = np.random.RandomState(seed)
     
-    data_dir = "data"
     unstructured_dir = os.path.join(data_dir, "unstructured")
     os.makedirs(unstructured_dir, exist_ok=True)
     
@@ -50,11 +59,11 @@ def main():
                     for team in teams:
                         # Define contact volume based on segment
                         if seg == 'Enterprise':
-                            base_contacts = np.random.randint(3, 8)
+                            base_contacts = rng.randint(3, 8)
                         elif seg == 'Mid-Market':
-                            base_contacts = np.random.randint(12, 28)
+                            base_contacts = rng.randint(12, 28)
                         else: # SMB
-                            base_contacts = np.random.randint(35, 75)
+                            base_contacts = rng.randint(35, 75)
                             
                         # Apply weekend seasonality (70% lower on weekends)
                         if is_weekend:
@@ -67,11 +76,11 @@ def main():
                             base_contacts = int(base_contacts * 0.8)
                             
                         # Small random variation
-                        contacts = max(1, base_contacts + np.random.randint(-2, 3))
+                        contacts = max(1, base_contacts + rng.randint(-2, 3))
                         
                         # Determine AI vs non-AI split using binomial
                         if rollout_prob > 0:
-                            ai_contacts = np.random.binomial(contacts, rollout_prob)
+                            ai_contacts = rng.binomial(contacts, rollout_prob)
                         else:
                             ai_contacts = 0
                             
@@ -86,7 +95,7 @@ def main():
                             
                         for c_count, is_ai in buckets:
                             # 98% resolved rate
-                            resolved = max(1, c_count - np.random.binomial(c_count, 0.02))
+                            resolved = max(1, c_count - rng.binomial(c_count, 0.02))
                             
                             # AHT Baseline calculation (seconds)
                             # ERP is simpler, Analytics is complex
@@ -110,7 +119,7 @@ def main():
                                 AHT *= 1.05
                                 
                             # Add some random normal noise to AHT
-                            AHT = max(60.0, np.random.normal(AHT, 30.0))
+                            AHT = max(60.0, rng.normal(AHT, 30.0))
                             total_handling_seconds = int(AHT * resolved)
                             
                             # First Contact Resolution (FCR)
@@ -126,7 +135,7 @@ def main():
                             if is_ai:
                                 fcr_rate -= 0.01 # slight drop
                                 
-                            fcr_count = np.random.binomial(c_count, fcr_rate)
+                            fcr_count = rng.binomial(c_count, fcr_rate)
                             fcr_count = min(fcr_count, resolved)
                             
                             # Repeat Contacts
@@ -142,7 +151,7 @@ def main():
                             if is_ai:
                                 repeat_rate *= 2.0
                                 
-                            repeat_count = np.random.binomial(c_count, min(0.9, repeat_rate))
+                            repeat_count = rng.binomial(c_count, min(0.9, repeat_rate))
                             
                             daily_records.append({
                                 'date': date_str,
@@ -159,7 +168,7 @@ def main():
                             })
                             
     support_df = pd.DataFrame(daily_records)
-    support_df.to_csv(os.path.join(data_dir, "support_daily.csv"), index=False)
+    support_df.to_csv(os.path.join(data_dir, "support_daily.csv"), index=False, lineterminator="\r\n")
     print(f"Generated support_daily.csv: {len(support_df)} rows")
     
     # --- SOURCE 2: CUSTOMER EXPERIENCE (WEEKLY) ---
@@ -177,7 +186,7 @@ def main():
         ai_prop = ai_contacts / total_contacts if total_contacts > 0 else 0.0
         
         # 10% response rate for CSAT surveys
-        survey_responses = max(1, int(np.random.normal(total_contacts * 0.12, total_contacts * 0.02)))
+        survey_responses = max(1, int(rng.normal(total_contacts * 0.12, total_contacts * 0.02)))
         
         # Base CSAT: ERP=84%, CRM=80%, Analytics=74%
         if prod == 'Core ERP':
@@ -202,7 +211,7 @@ def main():
             confounding_drop = 6.5 # drops CSAT independently
             
         # Compute CSAT score with normal noise
-        noise = np.random.normal(0, 1.5)
+        noise = rng.normal(0, 1.5)
         csat_score = base_csat - ai_drop - confounding_drop + noise
         csat_score = min(100.0, max(20.0, csat_score))
         
@@ -216,7 +225,7 @@ def main():
         })
         
     cx_df = pd.DataFrame(cx_records)
-    cx_df.to_csv(os.path.join(data_dir, "cx_weekly.csv"), index=False)
+    cx_df.to_csv(os.path.join(data_dir, "cx_weekly.csv"), index=False, lineterminator="\r\n")
     print(f"Generated cx_weekly.csv: {len(cx_df)} rows")
     
     # --- SOURCE 3: CRM (MONTHLY) ---
@@ -249,7 +258,7 @@ def main():
                     
                 # Fluctuate monthly active customers (some growth)
                 month_idx = months.index(m)
-                active_customers = int(active_base * (1.0 + 0.008 * month_idx) + np.random.randint(-10, 11))
+                active_customers = int(active_base * (1.0 + 0.008 * month_idx) + rng.randint(-10, 11))
                 
                 # Base retention rate: Enterprise=99.2%, Mid-Market=97.8%, SMB=95.5%
                 if seg == 'Enterprise':
@@ -280,7 +289,7 @@ def main():
                 
                 retained_customers = int(active_customers * retention_rate)
                 # Random tiny noise in count
-                retained_customers = min(active_customers, max(0, retained_customers + np.random.randint(-2, 3)))
+                retained_customers = min(active_customers, max(0, retained_customers + rng.randint(-2, 3)))
                 
                 crm_records.append({
                     'month': m,
@@ -291,7 +300,7 @@ def main():
                 })
                 
     crm_df = pd.DataFrame(crm_records)
-    crm_df.to_csv(os.path.join(data_dir, "crm_monthly.csv"), index=False)
+    crm_df.to_csv(os.path.join(data_dir, "crm_monthly.csv"), index=False, lineterminator="\r\n")
     print(f"Generated crm_monthly.csv: {len(crm_df)} rows")
     
     # --- SOURCE 5: SPARSE-HISTORY SCENARIO (AI RESOLUTION RATE) ---
@@ -307,7 +316,7 @@ def main():
             for prod in products:
                 # AI resolution rate is a newly measured metric
                 # Fluctuate around 72% to 80%
-                rate = round(np.random.normal(76.0, 2.5), 2)
+                rate = round(rng.normal(76.0, 2.5), 2)
                 sparse_records.append({
                     'date': sd_str,
                     'region': reg,
@@ -316,7 +325,7 @@ def main():
                 })
                 
     sparse_df = pd.DataFrame(sparse_records)
-    sparse_df.to_csv(os.path.join(data_dir, "ai_resolution_rate.csv"), index=False)
+    sparse_df.to_csv(os.path.join(data_dir, "ai_resolution_rate.csv"), index=False, lineterminator="\r\n")
     print(f"Generated ai_resolution_rate.csv: {len(sparse_df)} rows")
     
     # --- SOURCE 4: UNSTRUCTURED EVIDENCE (TXT FILES) ---
@@ -375,7 +384,7 @@ Marcus: Apologies for that. The automated assistant follows a standard size-limi
 Customer: Okay. Please transfer us to manual support in the future.
 Marcus: I will flag your enterprise account. FCR: No. Handling time: 820 seconds.
 """
-    with open(os.path.join(unstructured_dir, "support_transcripts.txt"), "w", encoding="utf-8") as f:
+    with open(os.path.join(unstructured_dir, "support_transcripts.txt"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write(transcripts.strip())
         
     # B) customer_feedback.txt
@@ -397,7 +406,7 @@ CSAT Survey Comment - Date: 2026-06-12 - Segment: SMB - Rating: 3/5
 CSAT Survey Comment - Date: 2026-06-25 - Segment: Enterprise - Rating: 2/5
 "Why can't we bypass the automated chat assistant? For complex analytical issues, it has a 0% success rate. FCR is flat because it claims it resolved it, but we have to call back."
 """
-    with open(os.path.join(unstructured_dir, "customer_feedback.txt"), "w", encoding="utf-8") as f:
+    with open(os.path.join(unstructured_dir, "customer_feedback.txt"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write(feedback.strip())
         
     # C) rollout_report.txt
@@ -426,7 +435,7 @@ OPERATIONAL IMPACT METRICS (Q2 AGGREGATE):
 4. Confounding Factors:
    Separately, a CRM Cloud product software patch deployed on May 4th, 2026, has introduced a known contact-sync issue, which has driven a volume surge in May and June.
 """
-    with open(os.path.join(unstructured_dir, "rollout_report.txt"), "w", encoding="utf-8") as f:
+    with open(os.path.join(unstructured_dir, "rollout_report.txt"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write(rollout_report.strip())
         
     print("Generated all simulated datasets successfully!")

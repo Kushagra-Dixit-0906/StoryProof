@@ -2,6 +2,7 @@ import pytest
 import os
 import re
 import pandas as pd
+import numpy as np
 import copy
 from src.engine.materiality import calculate_kpi_value, analyze_kpi_change
 
@@ -196,3 +197,86 @@ def test_layout_determinism(tmp_path):
 
     # Verify outputs are byte-for-byte identical
     assert res1.equals(res2)
+
+# 13. Trend chart period-boundary and visual bucketing guarantees
+@pytest.mark.parametrize("kpi_name", ["AHT", "FCR", "Repeat_Contact_Rate"])
+def test_trend_chart_period_boundary_guarantees(kpi_name):
+    config = load_kpi_definitions("config/kpi_definitions.yaml")
+    baseline = ("2026-01-01", "2026-03-31")
+    comparison = ("2026-06-01", "2026-06-30")
+
+    ts_df = load_kpi_time_series(kpi_name, config, "data")
+    assert ts_df is not None
+    orig_len = len(ts_df)
+    orig_df_copy = ts_df.copy()
+
+    fig = build_trend_chart(kpi_name, ts_df, baseline, comparison)
+    assert fig is not None
+    # Verify underlying daily dataframe was not mutated
+    assert ts_df.equals(orig_df_copy)
+    assert len(ts_df) == orig_len
+
+    # Extract plotted points
+    chart_x = [pd.to_datetime(d) for d in fig.data[0].x]
+    chart_y = list(fig.data[0].y)
+
+    # Filter June plotted points
+    june_points = [(x, y) for x, y in zip(chart_x, chart_y) if pd.Timestamp("2026-06-01") <= x <= pd.Timestamp("2026-06-30")]
+
+    # Guarantee 1: June produces exactly 5 clean visual buckets (approx 5)
+    assert len(june_points) == 5
+
+    # Guarantee 2: First June bucket is anchored at exactly 2026-06-01
+    assert june_points[0][0] == pd.Timestamp("2026-06-01")
+
+    # Guarantee 3: Last June bucket is anchored at exactly 2026-06-29 (covering 2026-06-29 to 2026-06-30)
+    assert june_points[-1][0] == pd.Timestamp("2026-06-29")
+
+    # Guarantee 4: No points in July exist
+    july_points = [x for x in chart_x if x >= pd.Timestamp("2026-07-01")]
+    assert len(july_points) == 0
+
+    # Guarantee 5: Clean title without implementation suffixes
+    assert fig.layout.title.text == f"{kpi_name} Over Time"
+
+# 14. Trend chart authoritative semantic aggregation tests
+def test_trend_chart_semantic_aggregation_vs_arithmetic_mean():
+    config = load_kpi_definitions("config/kpi_definitions.yaml")
+    baseline = ("2026-01-01", "2026-03-31")
+    comparison = ("2026-06-01", "2026-06-30")
+
+    df_raw = pd.read_csv("data/support_daily.csv")
+    df_raw["dt"] = pd.to_datetime(df_raw["date"])
+    j1_7_raw = df_raw[(df_raw["dt"] >= "2026-06-01") & (df_raw["dt"] <= "2026-06-07")]
+
+    # AHT verification
+    ts_aht = load_kpi_time_series("AHT", config, "data")
+    fig_aht = build_trend_chart("AHT", ts_aht, baseline, comparison)
+    june_aht_pts = [y for x, y in zip(fig_aht.data[0].x, fig_aht.data[0].y) if pd.Timestamp("2026-06-01") <= pd.to_datetime(x) <= pd.Timestamp("2026-06-30")]
+    expected_aht_j1_7 = (j1_7_raw["total_handling_seconds"].sum() / (j1_7_raw["resolved_contacts"].sum() * 60.0))
+    # Must match authoritative raw formula (~5.812386) and NOT arithmetic mean of daily values (~5.807161)
+    assert np.isclose(june_aht_pts[0], expected_aht_j1_7)
+    assert not np.isclose(june_aht_pts[0], 5.807161, atol=1e-4)
+
+    # FCR verification
+    ts_fcr = load_kpi_time_series("FCR", config, "data")
+    fig_fcr = build_trend_chart("FCR", ts_fcr, baseline, comparison)
+    june_fcr_pts = [y for x, y in zip(fig_fcr.data[0].x, fig_fcr.data[0].y) if pd.Timestamp("2026-06-01") <= pd.to_datetime(x) <= pd.Timestamp("2026-06-30")]
+    expected_fcr_j1_7 = j1_7_raw["first_contact_resolutions"].sum() / j1_7_raw["contacts"].sum()
+    assert np.isclose(june_fcr_pts[0], expected_fcr_j1_7)
+    assert not np.isclose(june_fcr_pts[0], 0.672120, atol=1e-4)
+
+    # Repeat Contact verification
+    ts_rpt = load_kpi_time_series("Repeat_Contact_Rate", config, "data")
+    fig_rpt = build_trend_chart("Repeat_Contact_Rate", ts_rpt, baseline, comparison)
+    june_rpt_pts = [y for x, y in zip(fig_rpt.data[0].x, fig_rpt.data[0].y) if pd.Timestamp("2026-06-01") <= pd.to_datetime(x) <= pd.Timestamp("2026-06-30")]
+    expected_rpt_j1_7 = j1_7_raw["repeat_contacts"].sum() / j1_7_raw["contacts"].sum()
+    assert np.isclose(june_rpt_pts[0], expected_rpt_j1_7)
+    assert not np.isclose(june_rpt_pts[0], 0.299779, atol=1e-4)
+
+# 15. Trend chart explanatory caption presence check
+def test_trend_explanatory_caption_present():
+    with open("app.py", "r", encoding="utf-8") as f:
+        app_code = f.read()
+    expected_caption = "How to read this trend: The headline KPI is calculated for the full comparison period. Trend points are period-aligned sub-period calculations using the same KPI definition and source data. Individual points therefore show how the KPI evolved within the period and are not expected to equal the headline value."
+    assert expected_caption in app_code

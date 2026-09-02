@@ -156,13 +156,20 @@ def load_kpi_time_series(kpi_name, kpi_definitions, data_dir, role=None):
     try:
         # Group by date column and compute authoritative volume-weighted KPI value per date
         records = []
+        num_field = kpi_def.get("numerator_field")
+        den_field = kpi_def.get("denominator_field")
+
         for date_val, group in df.groupby(date_col):
             kpi_val = calculate_kpi_value(group, kpi_name, kpi_def)
             if kpi_val is not None:
-                records.append({
+                rec = {
                     "date": pd.to_datetime(date_val),
                     "value": float(kpi_val)
-                })
+                }
+                if num_field and den_field and num_field in group.columns and den_field in group.columns:
+                    rec[num_field] = group[num_field].sum()
+                    rec[den_field] = group[den_field].sum()
+                records.append(rec)
 
         if not records:
             return None
@@ -172,34 +179,77 @@ def load_kpi_time_series(kpi_name, kpi_definitions, data_dir, role=None):
     except (KeyError, ValueError, TypeError, ZeroDivisionError, pd.errors.ParserError, OSError):
         return None
 
-def build_trend_chart(kpi_name, kpi_df, baseline_period, comparison_period, show_shading=True):
+def build_trend_chart(kpi_name, kpi_df, baseline_period, comparison_period, show_shading=True, kpi_definitions=None):
     """
     Builds a Plotly trend chart for the KPI.
-    Aggregates dense daily series (e.g. AHT, FCR, Repeat Contact) to weekly averages for visual clarity,
-    while preserving natural daily grain for sparse series (AI Resolution Rate) and weekly/monthly series.
+    Applies clean, period-aware 7-day visual bucketing to long daily series (>30 points)
+    using the authoritative KPI semantic formula directly over each window slice,
+    while strictly preserving period boundaries and natural cadence for weekly/monthly series.
     Shades baseline and comparison ranges if show_shading is True.
     """
     if kpi_df is None or kpi_df.empty:
         return None
 
     plot_df = kpi_df.copy()
-    plot_df = plot_df.groupby('date', as_index=False)['value'].mean().sort_values('date')
 
-    # Weekly visual aggregation for long daily series (>30 days) to prevent spaghetti clutter
-    is_weekly_aggregated = False
-    if len(plot_df) > 30:
+    # Retrieve KPI definition for authoritative formula recalculation
+    kpi_def = None
+    if kpi_definitions and isinstance(kpi_definitions, dict):
+        kpi_def = kpi_definitions.get(kpi_name)
+    if not kpi_def:
         try:
-            plot_df_indexed = plot_df.set_index('date')
-            weekly_df = plot_df_indexed.resample('W-MON').mean().dropna().reset_index()
-            if not weekly_df.empty and len(weekly_df) >= 4:
-                plot_df = weekly_df
-                is_weekly_aggregated = True
-        except Exception:
+            kpi_defs = load_kpi_definitions("config/kpi_definitions.yaml")
+            if kpi_defs:
+                kpi_def = kpi_defs.get(kpi_name)
+        except (KeyError, ValueError, TypeError, OSError):
+            kpi_def = None
+
+    # Apply deterministic period-aware 7-day visual bucketing for long daily series (>30 points)
+    if len(plot_df) > 30 and baseline_period and comparison_period:
+        try:
+            b_start = pd.to_datetime(baseline_period[0])
+            b_end = pd.to_datetime(baseline_period[1])
+            c_start = pd.to_datetime(comparison_period[0])
+            c_end = pd.to_datetime(comparison_period[1])
+            d_min = plot_df['date'].min()
+            d_max = plot_df['date'].max()
+
+            segments = []
+            if d_min < b_start:
+                segments.append((d_min, b_start - pd.Timedelta(days=1)))
+            segments.append((b_start, b_end))
+            if b_end + pd.Timedelta(days=1) < c_start:
+                segments.append((b_end + pd.Timedelta(days=1), c_start - pd.Timedelta(days=1)))
+            segments.append((c_start, c_end))
+            if c_end < d_max:
+                segments.append((c_end + pd.Timedelta(days=1), d_max))
+
+            bucket_records = []
+            for s_start, s_end in segments:
+                if s_start > s_end:
+                    continue
+                cur = s_start
+                while cur <= s_end:
+                    cur_end = min(cur + pd.Timedelta(days=6), s_end)
+                    slice_df = plot_df[(plot_df['date'] >= cur) & (plot_df['date'] <= cur_end)]
+                    if not slice_df.empty:
+                        # Authoritative raw-formula aggregation if definition and fields are present
+                        if kpi_def and kpi_def.get("numerator_field") in slice_df.columns and kpi_def.get("denominator_field") in slice_df.columns:
+                            bucket_val = calculate_kpi_value(slice_df, kpi_name, kpi_def)
+                        else:
+                            bucket_val = float(slice_df['value'].mean())
+                        bucket_records.append({
+                            'date': cur,
+                            'value': float(bucket_val)
+                        })
+                    cur = cur_end + pd.Timedelta(days=1)
+
+            if bucket_records:
+                plot_df = pd.DataFrame(bucket_records).sort_values('date').reset_index(drop=True)
+        except (KeyError, ValueError, TypeError, ZeroDivisionError, pd.errors.ParserError, OSError):
             pass
 
     chart_title = f"{kpi_name} Over Time"
-    if is_weekly_aggregated:
-        chart_title += " (Weekly Visual Average)"
 
     fig = px.line(plot_df, x="date", y="value", title=chart_title, markers=True)
 
@@ -629,6 +679,7 @@ def main():
             fig_bi = build_trend_chart(selected_kpi_bi, ts_df_bi, baseline_period, comparison_period, show_shading=False)
             if fig_bi:
                 st.plotly_chart(fig_bi, use_container_width=True)
+                st.caption("How to read this trend: The headline KPI is calculated for the full comparison period. Trend points are period-aligned sub-period calculations using the same KPI definition and source data. Individual points therefore show how the KPI evolved within the period and are not expected to equal the headline value.")
         else:
             st.info("No time-series data available for the selected KPI.")
 
@@ -698,6 +749,7 @@ def main():
             fig_proof = build_trend_chart(selected_kpi_proof, ts_df_proof, baseline_period, comparison_period, show_shading=True)
             if fig_proof:
                 st.plotly_chart(fig_proof, use_container_width=True)
+                st.caption("How to read this trend: The headline KPI is calculated for the full comparison period. Trend points are period-aligned sub-period calculations using the same KPI definition and source data. Individual points therefore show how the KPI evolved within the period and are not expected to equal the headline value.")
         else:
             st.info("No time-series data available for the selected KPI.")
 
